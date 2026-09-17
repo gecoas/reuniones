@@ -1,0 +1,8 @@
+node_modules/
+.git/
+.github/
+docker-compose.yml
+cloudflared-config.yml
+start.sh
+.gitignore
+.dockerignore

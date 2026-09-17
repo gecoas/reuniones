@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claustro · Reuniones de departamento</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><div class="brand-mark">C</div><span>claustro</span></div>
+      <div class="school-switcher"><div class="school-icon">◎</div><div><strong>IES Monteverde</strong><small>Curso 2024 / 25</small></div><span class="chevron">⌄</span></div>
+      <nav class="main-nav" aria-label="Navegación principal">
+        <span class="nav-label">Espacio de trabajo</span>
+        <button class="nav-item active"><span class="nav-icon">▦</span> Resumen</button>
+        <button class="nav-item"><span class="nav-icon">◷</span> Reuniones <em>3</em></button>
+        <button class="nav-item"><span class="nav-icon">✓</span> Tareas</button>
+        <span class="nav-label dept-label">Mis departamentos</span>
+        <button class="nav-item dept active-dept"><i class="dot coral"></i> Lengua castellana</button>
+        <button class="nav-item dept"><i class="dot blue"></i> Ciencias</button>
+        <button class="nav-item dept"><i class="dot gold"></i> Orientación</button>
+      </nav>
+      <div class="sidebar-bottom"><button class="nav-item"><span class="nav-icon">⚙</span> Configuración</button><div class="profile"><div class="avatar avatar-small">LM</div><div><strong>Laura Martín</strong><small>Jefa de departamento</small></div><span>⋮</span></div></div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar"><button class="mobile-menu" id="mobileMenu">☰</button><div class="breadcrumb"><span>Espacio de trabajo</span><b>/</b><strong>Resumen</strong></div><div class="top-actions"><button class="icon-button" title="Notificaciones">♧<i></i></button><div class="avatar">LM</div></div></header>
+      <div class="content-wrap">
+        <section class="welcome-row"><div><p class="eyebrow">MIÉRCOLES, 16 DE OCTUBRE DE 2024</p><h1>Buenos días, Laura <span>✦</span></h1><p class="subheading">Esto es lo que está pasando en tus departamentos.</p></div><button class="button primary" id="newMeeting"><span>＋</span> Nueva reunión</button></section>
+
+        <section class="stats-grid">
+          <article class="stat-card"><div class="stat-head"><span>Próxima reunión</span><span class="mini-icon coral-bg">◷</span></div><strong>Jueves, 17 oct.</strong><p>Lengua castellana <span class="status-dot"></span> 10:30</p><a href="#meeting">Ver detalles <span>→</span></a></article>
+          <article class="stat-card"><div class="stat-head"><span>Tareas pendientes</span><span class="mini-icon blue-bg">✓</span></div><strong class="big-number">8</strong><p><span class="up">↑ 2</span> desde la semana pasada</p><a href="#tasks">Ver mis tareas <span>→</span></a></article>
+          <article class="stat-card"><div class="stat-head"><span>Actas por revisar</span><span class="mini-icon gold-bg">▤</span></div><strong class="big-number">2</strong><p>De tus departamentos</p><a href="#minutes">Revisar actas <span>→</span></a></article>
+        </section>
+
+        <div class="section-heading"><div><h2>Lengua castellana</h2><p>Actividad del departamento</p></div><button class="period-select">Esta semana <span>⌄</span></button></div>
+        <section class="dashboard-grid">
+          <article class="panel agenda-panel" id="meeting"><div class="panel-header"><div><span class="label-with-dot"><i class="dot coral"></i> PRÓXIMA REUNIÓN</span><h3>Reunión de departamento</h3><p class="muted">Jueves, 17 de octubre · 10:30 – 11:30</p></div><button class="more-button" title="Más opciones">•••</button></div><div class="meeting-meta"><div><span class="meta-icon">⌂</span><span>Sala de profesores</span></div><div class="attendees"><div class="avatar-stack"><span class="avatar avatar-xs">LM</span><span class="avatar avatar-xs green">AR</span><span class="avatar avatar-xs purple">MP</span><span class="avatar avatar-xs more">+2</span></div><span>5 asistentes</span></div></div><div class="agenda-preview"><div class="agenda-title"><strong>Orden del día</strong><span>3 puntos</span></div><ol><li><span>01</span><div><strong>Evaluación inicial y resultados</strong><small>Añadido por Ana Rodríguez</small></div></li><li><span>02</span><div><strong>Actividades para el Día del Libro</strong><small>Añadido por Marta Pérez</small></div></li><li><span>03</span><div><strong>Ruegos y preguntas</strong><small>Propuesto por ti</small></div></li></ol><button class="button outline full" id="openAgenda">Ver orden del día completo <span>→</span></button></div></article>
+          <article class="panel tasks-panel" id="tasks"><div class="panel-header"><div><span class="label-with-dot"><i class="dot blue"></i> SEGUIMIENTO</span><h3>Tareas del departamento</h3></div><button class="add-task" id="addTask">＋ Añadir</button></div><div class="task-filters"><button class="filter active">Todas <b>8</b></button><button class="filter">En curso <b>5</b></button><button class="filter">Pendientes <b>3</b></button></div><div class="task-list"><div class="task-row"><span class="check checked">✓</span><div class="task-copy"><strong>Preparar rúbrica de 3º ESO</strong><small>Laura Martín · Vence hoy</small></div><span class="task-status done">Hecha</span></div><div class="task-row"><span class="check"></span><div class="task-copy"><strong>Reservar salón de actos</strong><small>Ana Rodríguez · Vence 18 oct.</small></div><span class="task-status progress">En curso</span></div><div class="task-row"><span class="check"></span><div class="task-copy"><strong>Diseñar cartel Día del Libro</strong><small>Marta Pérez · Vence 21 oct.</small></div><span class="task-status pending">Pendiente</span></div><div class="task-row"><span class="check"></span><div class="task-copy"><strong>Compartir lecturas recomendadas</strong><small>Laura Martín · Vence 25 oct.</small></div><span class="task-status pending">Pendiente</span></div></div><button class="text-button">Ver todas las tareas <span>→</span></button></article>
+        </section>
+
+        <section class="bottom-grid"><article class="panel minutes-panel" id="minutes"><div class="panel-header"><div><span class="label-with-dot"><i class="dot gold"></i> DOCUMENTACIÓN</span><h3>Últimas actas</h3></div><button class="text-button">Ver todas <span>→</span></button></div><div class="minutes-row"><div class="doc-icon">▤</div><div class="doc-copy"><strong>Acta · 3 de octubre de 2024</strong><small>Reunión de departamento · Lengua castellana</small></div><span class="review-tag">Por revisar</span><button class="small-edit" title="Editar acta">✎</button></div><div class="minutes-row"><div class="doc-icon">▤</div><div class="doc-copy"><strong>Acta · 19 de septiembre de 2024</strong><small>Reunión de departamento · Lengua castellana</small></div><span class="sent-tag">Enviada</span><button class="small-edit" title="Ver acta">↗</button></div></article><article class="panel reminder-panel"><div class="panel-header"><div><span class="label-with-dot"><i class="dot purple-dot"></i> RECORDATORIOS</span><h3>Frecuencia de e-mails</h3></div><span class="settings-icon">⚙</span></div><p>Los miembros reciben un resumen de sus tareas pendientes.</p><div class="frequency-options"><button class="frequency active">Una vez por semana</button><button class="frequency">Dos veces por semana</button><button class="frequency">Desactivados</button></div><div class="saved-note" id="savedNote">✓ Preferencia guardada</div></article></section>
+      </div>
+    </main>
+  </div>
+  <div class="toast" id="toast">Cambios guardados correctamente</div>
+  <div class="modal-backdrop" id="modal"><div class="modal"><div class="modal-head"><div><span class="label-with-dot"><i class="dot coral"></i> NUEVA REUNIÓN</span><h2>Preparar una reunión</h2></div><button class="close-modal" id="closeModal">×</button></div><label>Título<input value="Reunión de departamento" /></label><div class="form-row"><label>Fecha<input type="date" value="2024-10-17" /></label><label>Hora<input type="time" value="10:30" /></label></div><label>Orden del día<textarea placeholder="Escribe un punto para empezar..."></textarea></label><div class="suggestion"><span>✦</span> Todos los miembros podrán añadir ideas al orden del día.</div><div class="modal-actions"><button class="button outline" id="cancelModal">Cancelar</button><button class="button primary" id="saveMeeting">Crear reunión</button></div></div></div>
+  <div class="modal-backdrop" id="minutesModal"><div class="modal minutes-editor"><div class="modal-head"><div><span class="label-with-dot"><i class="dot gold"></i> ACTA · 3 DE OCTUBRE DE 2024</span><h2>Revisar y compartir acta</h2></div><button class="close-modal" id="closeMinutes">×</button></div><div class="editor-toolbar"><button><b>B</b></button><button><i>I</i></button><button>• Lista</button><span></span><small>Última edición hace 2 días</small></div><div class="editable" contenteditable="true"><h4>1. Evaluación inicial y resultados</h4><p>Se revisan los resultados de la evaluación inicial de 1º, 2º y 3º de ESO. El equipo acuerda reforzar la comprensión lectora en el primer trimestre.</p><h4>2. Actividades para el Día del Libro</h4><p>Marta preparará una propuesta de actividades para compartir en la próxima reunión.</p><h4>Acuerdos y tareas</h4><p>Queda aprobada la selección de lecturas recomendadas para el segundo ciclo.</p></div><div class="editor-footer"><span class="recipient-note">Se enviará a <b>5 miembros</b> del departamento</span><div class="modal-actions"><button class="button outline" id="closeMinutesBottom">Cerrar</button><button class="button primary" id="shareMinutes">Guardar y enviar →</button></div></div></div></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+tunnel: 0ff9b2c7-a39a-44c8-b6cd-72d723923c28
+credentials-file: /home/coas/.cloudflared/0ff9b2c7-a39a-44c8-b6cd-72d723923c28.json
+
+ingress:
+  - hostname: reuniones.gecoas.es
+    service: http://localhost:8080
+  - service: http_status:404

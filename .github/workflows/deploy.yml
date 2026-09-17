@@ -1,0 +1,48 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: [self-hosted, opencode, docker, production, deploy]
+
+    steps:
+      - name: Deploy by local runner
+        run: |
+          set -euo pipefail
+          umask 077
+
+          PROJECT_NAME="reuniones"
+          PROD_HOST="192.168.35.27"
+          PROD_PATH="/opt/proyectos/reuniones"
+          REPO_SSH="git@github-gecoas-prod:gecoas/reuniones.git"
+
+          ssh deploy@$PROD_HOST "
+            set -euo pipefail
+            umask 077
+
+            mkdir -p '$PROD_PATH'
+            cd '$PROD_PATH'
+
+            if [ ! -d .git ]; then
+              git clone '$REPO_SSH' .
+            else
+              git remote set-url origin '$REPO_SSH'
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+
+            docker compose -f docker-compose.yml up -d --build --remove-orphans
+            docker image prune -f
+
+            echo 'Deploy completado correctamente'
+            docker compose -f docker-compose.yml ps
+          "
