@@ -4,6 +4,6 @@ services:
     container_name: reuniones-gecoas
     restart: unless-stopped
     ports:
-      - "8086:80"
+      - "8087:80"
     environment:
       - TZ=Europe/Madrid
