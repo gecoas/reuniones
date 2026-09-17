@@ -10,6 +10,9 @@ fetch('/api/session').then(response => {
 }).then(session => {
   authScreen.remove();
   appShell.style.visibility = 'visible';
+  const profile = document.querySelector('.profile');
+  if (profile) profile.querySelector('strong').textContent = session.name || session.email;
+  if (profile) profile.querySelector('small').textContent = session.isAdmin ? 'Administrador de la plataforma' : session.email;
   if (session.picture) document.querySelector('#userAvatar').style.backgroundImage = `url(${session.picture})`;
   if (session.isAdmin) {
     const actions = document.querySelector('.welcome-row > div:last-child');

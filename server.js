@@ -12,10 +12,12 @@ const appUrl = (process.env.APP_URL || 'https://reuniones.gecoas.es').replace(/\
 const clientId = process.env.GOOGLE_CLIENT_ID;
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const adminEmail = (process.env.ADMIN_EMAIL || 'gbailly@alcaste-lasfuentes.com').toLowerCase();
-const sessions = new Map();
 const redirectUri = `${appUrl}/auth/google/callback`;
+const sessionSecret = process.env.SESSION_SECRET || clientSecret || 'reuniones-session-change-me';
 const cookie = (token, maxAge) => `session=${token}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
 const parseCookies = request => Object.fromEntries((request.headers.cookie || '').split(';').filter(Boolean).map(value => { const [key, ...rest] = value.trim().split('='); return [key, rest.join('=')]; }));
+const signSession = session => { const payload = Buffer.from(JSON.stringify(session)).toString('base64url'); const signature = crypto.createHmac('sha256', sessionSecret).update(payload).digest('base64url'); return `${payload}.${signature}`; };
+const readSession = token => { try { const [payload, signature] = String(token || '').split('.'); const expected = crypto.createHmac('sha256', sessionSecret).update(payload).digest('base64url'); if (!payload || !signature || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null; const session = JSON.parse(Buffer.from(payload, 'base64url').toString()); return session.expires > Date.now() ? session : null; } catch { return null; } };
 const send = (response, status, body, headers = {}) => { response.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', ...headers }); response.end(body); };
 const redirect = (response, location, headers = {}) => { response.writeHead(302, { Location: location, ...headers }); response.end(); };
 
@@ -31,9 +33,8 @@ async function callback(request, response) {
   const profile = await profileResponse.json();
   const email = String(profile.email || '').toLowerCase();
   if (!email.endsWith('@alcaste-lasfuentes.com')) return redirect(response, '/?error=domain_not_allowed');
-  const sessionId = crypto.randomBytes(32).toString('hex');
-  sessions.set(sessionId, { email, name: profile.name, picture: profile.picture, isAdmin: email === adminEmail, expires: Date.now() + 8 * 60 * 60 * 1000 });
-  redirect(response, '/', { 'Set-Cookie': cookie(sessionId, 8 * 60 * 60) });
+  const session = { email, name: profile.name, picture: profile.picture, isAdmin: email === adminEmail, expires: Date.now() + 8 * 60 * 60 * 1000 };
+  redirect(response, '/', { 'Set-Cookie': cookie(signSession(session), 8 * 60 * 60) });
 }
 
 const server = http.createServer(async (request, response) => {
@@ -46,8 +47,8 @@ const server = http.createServer(async (request, response) => {
     if (request.url?.startsWith('/auth/google/callback')) return await callback(request, response);
     if (request.url === '/auth/logout') return redirect(response, '/', { 'Set-Cookie': cookie('', 0) });
     if (request.url === '/api/session') {
-      const session = sessions.get(parseCookies(request).session);
-      if (!session || session.expires < Date.now()) return send(response, 401, JSON.stringify({ authenticated: false }), { 'Content-Type': 'application/json' });
+      const session = readSession(parseCookies(request).session);
+      if (!session) return send(response, 401, JSON.stringify({ authenticated: false }), { 'Content-Type': 'application/json' });
       return send(response, 200, JSON.stringify({ authenticated: true, ...session }), { 'Content-Type': 'application/json' });
     }
     const requested = new URL(request.url, appUrl).pathname;
