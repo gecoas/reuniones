@@ -6,3 +6,4 @@ cloudflared-config.yml
 start.sh
 .gitignore
 .dockerignore
+*.md

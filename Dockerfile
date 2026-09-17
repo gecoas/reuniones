@@ -1,6 +1,8 @@
-FROM nginx:alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY index.html /usr/share/nginx/html/
-COPY styles.css /usr/share/nginx/html/
-COPY app.js /usr/share/nginx/html/
+FROM node:22-alpine
+WORKDIR /app
+COPY package.json ./
+RUN npm install --omit=dev
+COPY index.html styles.css app.js server.js ./
+ENV PORT=80
 EXPOSE 80
+CMD ["node", "server.js"]

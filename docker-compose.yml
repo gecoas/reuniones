@@ -7,3 +7,8 @@ services:
       - "8087:80"
     environment:
       - TZ=Europe/Madrid
+      - PORT=80
+      - APP_URL=https://reuniones.gecoas.es
+      - ADMIN_EMAIL=gbailly@alcaste-lasfuentes.com
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
