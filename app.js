@@ -4,6 +4,7 @@ const showToast = (message) => { toast.textContent = message; toast.classList.ad
 const authScreen = document.querySelector('#authScreen');
 const appShell = document.querySelector('.app-shell');
 appShell.style.visibility = 'hidden';
+const isGithubPreview = window.location.hostname.endsWith('github.io');
 fetch('/api/session').then(response => {
   if (!response.ok) throw new Error('unauthenticated');
   return response.json();
@@ -20,7 +21,15 @@ fetch('/api/session').then(response => {
     actions?.prepend(admin);
     admin.addEventListener('click', () => document.querySelector('#adminModal').classList.add('open'));
   }
-}).catch(() => { appShell.style.visibility = 'hidden'; });
+}).catch(() => {
+  if (isGithubPreview) {
+    authScreen.remove();
+    appShell.style.visibility = 'visible';
+    showToast('Vista previa estática: el login funciona en reuniones.gecoas.es');
+  } else {
+    appShell.style.visibility = 'hidden';
+  }
+});
 document.querySelector('#newMeeting').addEventListener('click', () => modal.classList.add('open'));
 ['#closeModal','#cancelModal'].forEach(selector => document.querySelector(selector).addEventListener('click', () => modal.classList.remove('open')));
 modal.addEventListener('click', (event) => { if (event.target === modal) modal.classList.remove('open'); });
