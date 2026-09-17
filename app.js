@@ -3,7 +3,6 @@ const toast = document.querySelector('#toast');
 const showToast = (message) => { toast.textContent = message; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2400); };
 const authScreen = document.querySelector('#authScreen');
 const appShell = document.querySelector('.app-shell');
-appShell.style.visibility = 'hidden';
 const isGithubPreview = window.location.hostname.endsWith('github.io');
 fetch('/api/session').then(response => {
   if (!response.ok) throw new Error('unauthenticated');
@@ -24,10 +23,7 @@ fetch('/api/session').then(response => {
 }).catch(() => {
   if (isGithubPreview) {
     authScreen.remove();
-    appShell.style.visibility = 'visible';
     showToast('Vista previa estática: el login funciona en reuniones.gecoas.es');
-  } else {
-    appShell.style.visibility = 'hidden';
   }
 });
 document.querySelector('#newMeeting').addEventListener('click', () => modal.classList.add('open'));
