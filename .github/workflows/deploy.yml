@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: production-${{ github.repository }}
@@ -13,6 +14,9 @@ jobs:
   deploy:
     name: Deploy to production
     runs-on: [self-hosted, opencode, docker, production, deploy]
+    env:
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
 
     steps:
       - name: Deploy by local runner
@@ -24,10 +28,30 @@ jobs:
           PROD_HOST="192.168.35.27"
           PROD_PATH="/opt/proyectos/reuniones"
           REPO_SSH="git@github-gecoas-prod:gecoas/reuniones.git"
+          APP_ENV=$(mktemp)
+          REMOTE_ENV=""
+          cleanup() {
+            rm -f "$APP_ENV"
+            if [ -n "$REMOTE_ENV" ]; then ssh deploy@$PROD_HOST "rm -f '$REMOTE_ENV'" || true; fi
+          }
+          trap cleanup EXIT
+
+          test -n "$GOOGLE_CLIENT_ID" || { echo "Falta el secreto GOOGLE_CLIENT_ID"; exit 1; }
+          test -n "$GOOGLE_CLIENT_SECRET" || { echo "Falta el secreto GOOGLE_CLIENT_SECRET"; exit 1; }
+          cat > "$APP_ENV" <<EOF
+          APP_URL=https://reuniones.gecoas.es
+          ADMIN_EMAIL=gbailly@alcaste-lasfuentes.com
+          GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+          GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
+          EOF
+          chmod 600 "$APP_ENV"
+          REMOTE_ENV=$(ssh deploy@$PROD_HOST "umask 077; mktemp /tmp/reuniones-app.XXXXXX")
+          scp "$APP_ENV" "deploy@$PROD_HOST:$REMOTE_ENV"
 
           ssh deploy@$PROD_HOST "
             set -euo pipefail
             umask 077
+            trap 'rm -f \"$REMOTE_ENV\"' EXIT
 
             mkdir -p '$PROD_PATH'
             cd '$PROD_PATH'
@@ -39,6 +63,9 @@ jobs:
               git fetch origin main
               git reset --hard origin/main
             fi
+
+            cp '$REMOTE_ENV' .env
+            chmod 600 .env
 
             docker compose -f docker-compose.yml up -d --build --remove-orphans
             docker image prune -f
