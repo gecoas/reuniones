@@ -9,6 +9,7 @@ let currentSession = null;
 let schoolSettings = null;
 let minuteTaskCount = 0;
 let editingMeetingId = null;
+let reminderDepartmentId = null;
 const renderAdminList = () => {
   const list = document.querySelector('#adminList');
   const items = adminData[adminSection];
@@ -22,7 +23,7 @@ let formState = null;
 const options = (items, value, label) => items.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === value ? 'selected' : ''}>${escapeHtml(label(item))}</option>`).join('');
 const departmentMembership = (user, departmentId) => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).find(department => department.id === departmentId);
 const addMinuteTaskRow = () => { const list = document.querySelector('#minuteTasks'); if (!list) return; minuteTaskCount += 1; list.insertAdjacentHTML('beforeend', `<div class="minute-task-row"><label>Qué<input name="actaTaskTitle" placeholder="Tarea"></label><label>Quién<select name="actaTaskAssigned"><option value="">Sin asignar</option>${options(adminData.users, '', user => user.name || user.email)}</select></label><label>Para cuándo<input name="actaTaskDue" type="date"></label><button type="button" class="remove-minute-task" aria-label="Quitar tarea">×</button></div>`); };
-const loadMinuteMeetingDetails = async meetingId => { const meeting = adminData.meetings.find(item => item.id === meetingId); if (!meeting) return; const agenda = await api(`/api/meetings/${meetingId}/agenda`); const fields = document.querySelector('#recordFields'); const attendees = (formState?.record?.attendees || '').split(',').map(item => item.trim()); fields.querySelector('[name="content"]').value = agenda.map((item, index) => `${index + 1}. ${item.title}`).join('\n'); fields.querySelector('#attendeeChips').innerHTML = adminData.users.filter(user => departmentMembership(user, meeting.department_id)).map(user => `<label class="attendee-chip"><input type="checkbox" name="attendee" value="${escapeHtml(user.name || user.email)}" ${attendees.includes(user.name || user.email) ? 'checked' : ''}><span>${escapeHtml(user.name || user.email)}</span></label>`).join('') || '<p class="form-help">No hay miembros asignados al departamento.</p>'; };
+const loadMinuteMeetingDetails = async meetingId => { const meeting = adminData.meetings.find(item => item.id === meetingId); if (!meeting) return; const agenda = await api(`/api/meetings/${meetingId}/agenda`); const fields = document.querySelector('#recordFields'); const attendees = (formState?.record?.attendees || '').split(',').map(item => item.trim()); fields.querySelector('[name="content"]').value = agenda.map(item => item.title).join('\n'); fields.querySelector('#attendeeChips').innerHTML = adminData.users.filter(user => departmentMembership(user, meeting.department_id)).map(user => `<label class="attendee-chip"><input type="checkbox" name="attendee" value="${escapeHtml(user.name || user.email)}" ${attendees.includes(user.name || user.email) ? 'checked' : ''}><span>${escapeHtml(user.name || user.email)}</span></label>`).join('') || '<p class="form-help">No hay miembros asignados al departamento.</p>'; };
 const openRecordForm = (type, record = null) => {
   formState = { type, record };
   const fields = document.querySelector('#recordFields');
@@ -96,6 +97,7 @@ const appShell = document.querySelector('.app-shell');
 const isGithubPreview = window.location.hostname.endsWith('github.io');
 const loadSchool = async () => { const settings = await api('/api/settings'); schoolSettings = settings; document.querySelector('#schoolName').textContent = settings.name; if (settings.logo_url) { const logo = document.querySelector('#schoolLogo'); logo.style.backgroundImage = `url(${settings.logo_url})`; logo.textContent = ''; } };
 const loadMyDepartments = async () => { const departments = await api('/api/my-departments'); const container = document.querySelector('#myDepartments'); container.innerHTML = departments.map((department, index) => `<button class="nav-item dept ${index === 0 ? 'active-dept' : ''}"><i class="dot ${escapeHtml(department.color)}"></i>${escapeHtml(department.name)}${department.role === 'manager' ? '<em>Gestor</em>' : ''}</button>`).join('') || '<p class="nav-empty">No perteneces a ningún departamento.</p>'; };
+const setupReminders = async () => { const panel = document.querySelector('.reminder-panel'); const departments = currentSession.isAdmin ? await api('/api/departments') : (await api('/api/my-departments')).filter(department => department.role === 'manager'); reminderDepartmentId = departments[0]?.id; if (!reminderDepartmentId) { panel.style.display = 'none'; return; } panel.style.display = ''; const setting = await api(`/api/reminders/${reminderDepartmentId}`); const map = { weekly: 0, twice_weekly: 1, disabled: 2 }; document.querySelectorAll('.frequency').forEach((button, index) => button.classList.toggle('active', index === map[setting.frequency])); };
 fetch('/api/session').then(response => {
   if (!response.ok) throw new Error('unauthenticated');
   return response.json();
@@ -119,7 +121,7 @@ fetch('/api/session').then(response => {
     document.querySelector('.admin-tab[data-admin-section="users"]').hidden = !session.isAdmin;
     admin.addEventListener('click', async () => { document.querySelector('#adminModal').classList.add('open'); try { await loadAdminData(); } catch { showToast('No se pudieron cargar los datos de administración'); } });
   }
-  Promise.all([loadDashboard(), loadSchool(), loadMyDepartments()]).catch(() => showToast('No se pudieron cargar los datos del resumen'));
+  Promise.all([loadDashboard(), loadSchool(), loadMyDepartments(), setupReminders()]).catch(() => showToast('No se pudieron cargar los datos del resumen'));
 }).catch(() => {
   if (isGithubPreview) {
     authScreen.remove();
@@ -137,7 +139,7 @@ document.querySelectorAll('.small-edit').forEach(button => button.addEventListen
 ['#closeMinutes','#closeMinutesBottom'].forEach(selector => document.querySelector(selector).addEventListener('click', () => minutesModal.classList.remove('open')));
 minutesModal.addEventListener('click', event => { if (event.target === minutesModal) minutesModal.classList.remove('open'); });
 document.querySelector('#shareMinutes').addEventListener('click', () => { minutesModal.classList.remove('open'); showToast('Acta guardada y enviada a 5 miembros'); });
-document.querySelectorAll('.frequency').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.frequency').forEach(item => item.classList.remove('active')); button.classList.add('active'); document.querySelector('#savedNote').classList.add('show'); showToast('Frecuencia de recordatorios actualizada'); }));
+document.querySelectorAll('.frequency').forEach((button, index) => button.addEventListener('click', async () => { if (!reminderDepartmentId) return; const frequency = ['weekly', 'twice_weekly', 'disabled'][index]; try { await api(`/api/reminders/${reminderDepartmentId}`, { method: 'PATCH', body: JSON.stringify({ frequency }) }); document.querySelectorAll('.frequency').forEach(item => item.classList.remove('active')); button.classList.add('active'); document.querySelector('#savedNote').classList.add('show'); showToast('Frecuencia actualizada'); } catch { showToast('No se pudo actualizar la frecuencia'); } }));
 document.querySelectorAll('.filter').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.filter').forEach(item => item.classList.remove('active')); button.classList.add('active'); }));
 document.querySelectorAll('.check:not(.checked)').forEach(check => check.addEventListener('click', () => { check.classList.toggle('checked'); check.textContent = check.classList.contains('checked') ? '✓' : ''; showToast(check.classList.contains('checked') ? 'Tarea marcada como hecha' : 'Tarea reabierta'); }));
 document.querySelector('#mobileMenu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));

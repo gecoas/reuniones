@@ -77,6 +77,15 @@ const server = http.createServer(async (request, response) => {
       const body = await readBody(request); const result = await pool.query('UPDATE school_settings SET name = COALESCE($1, name), logo_url = NULLIF($2, \'\'), updated_at = now() WHERE id = TRUE RETURNING name, logo_url', [body.name || null, body.logoUrl ?? null]);
       return json(response, 200, result.rows[0]);
     }
+    if (request.url?.match(/^\/api\/reminders\/[^/]+$/) && request.method === 'GET') {
+      const session = requireSession(request, response); if (!session) return;
+      const departmentId = request.url.split('/')[3]; if (!await canManageDepartment(session, departmentId)) return json(response, 403, { error: 'department_manager_required' });
+      const result = await pool.query('SELECT frequency FROM reminder_settings WHERE department_id = $1', [departmentId]); return json(response, 200, result.rows[0] || { frequency: 'weekly' });
+    }
+    if (request.url?.match(/^\/api\/reminders\/[^/]+$/) && request.method === 'PATCH') {
+      const session = requireSession(request, response); if (!session) return;
+      const departmentId = request.url.split('/')[3]; if (!await canManageDepartment(session, departmentId)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO reminder_settings (department_id, frequency, updated_by) VALUES ($1, $2, $3) ON CONFLICT (department_id) DO UPDATE SET frequency = EXCLUDED.frequency, updated_by = EXCLUDED.updated_by, updated_at = now() RETURNING frequency', [departmentId, body.frequency, user.rows[0]?.id || null]); return json(response, 200, result.rows[0]);
+    }
     if (request.url === '/api/departments' && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
       const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT d.id, d.name, d.color, d.head_user_id, u.name AS head_name, COUNT(dm.user_id)::int AS member_count FROM departments d LEFT JOIN users u ON u.id = d.head_user_id LEFT JOIN department_members dm ON dm.department_id = d.id ${ids ? 'WHERE d.id = ANY($1::uuid[])' : ''} GROUP BY d.id, u.name ORDER BY d.name`, ids ? [ids] : []);
