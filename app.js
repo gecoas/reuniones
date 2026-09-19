@@ -87,7 +87,8 @@ fetch('/api/session').then(response => {
   const profile = document.querySelector('.profile');
   if (profile) profile.querySelector('strong').textContent = session.name || session.email;
   if (profile) profile.querySelector('small').textContent = session.isAdmin ? 'Administrador de la plataforma' : session.email;
-  if (session.picture) document.querySelector('#userAvatar').style.backgroundImage = `url(${session.picture})`;
+  const userAvatar = document.querySelector('#userAvatar');
+  if (session.picture && userAvatar) userAvatar.style.backgroundImage = `url(${session.picture})`;
   if (session.isAdmin) {
     const admin = document.querySelector('#adminNav');
     admin.hidden = false;
