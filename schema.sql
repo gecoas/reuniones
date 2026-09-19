@@ -10,6 +10,18 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'manager', 'member'));
+
+CREATE TABLE IF NOT EXISTS school_settings (
+  id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+  name TEXT NOT NULL DEFAULT 'IES Monteverde',
+  logo_url TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO school_settings (id, name) VALUES (TRUE, 'IES Monteverde') ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS departments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,

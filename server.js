@@ -28,6 +28,14 @@ const json = (response, status, body) => send(response, status, JSON.stringify(b
 const getRequestSession = request => readSession(parseCookies(request).session);
 const requireSession = (request, response) => { const session = getRequestSession(request); if (!session) { json(response, 401, { error: 'authentication_required' }); return null; } return session; };
 const requireAdmin = (request, response) => { const session = requireSession(request, response); if (session && !session.isAdmin) { json(response, 403, { error: 'admin_required' }); return null; } return session; };
+const accessibleDepartmentIds = async session => {
+  if (session.isAdmin) return null;
+  const user = await pool.query('SELECT id, role FROM users WHERE email = $1', [session.email]);
+  if (!user.rows[0]) return [];
+  if (user.rows[0].role === 'manager') return (await pool.query('SELECT id FROM departments WHERE head_user_id = $1', [user.rows[0].id])).rows.map(row => row.id);
+  return (await pool.query('SELECT department_id AS id FROM department_members WHERE user_id = $1', [user.rows[0].id])).rows.map(row => row.id);
+};
+const canManageDepartment = async (session, departmentId) => session.isAdmin || (await pool.query('SELECT 1 FROM departments d JOIN users u ON u.id = d.head_user_id WHERE d.id = $1 AND u.email = $2 AND u.role = $3', [departmentId, session.email, 'manager'])).rowCount > 0;
 
 async function callback(request, response) {
   const query = new URL(request.url, appUrl).searchParams;
@@ -41,8 +49,8 @@ async function callback(request, response) {
   const profile = await profileResponse.json();
   const email = String(profile.email || '').toLowerCase();
   if (!email.endsWith('@alcaste-lasfuentes.com')) return redirect(response, '/?error=domain_not_allowed');
-  const userResult = await pool.query(`INSERT INTO users (email, name, picture, role) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, picture = EXCLUDED.picture, updated_at = now() RETURNING id`, [email, profile.name || email, profile.picture || null, email === adminEmail ? 'admin' : 'member']);
-  const session = { email, name: profile.name, picture: profile.picture, isAdmin: email === adminEmail, expires: Date.now() + 8 * 60 * 60 * 1000 };
+  const userResult = await pool.query(`INSERT INTO users (email, name, picture, role) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, picture = EXCLUDED.picture, role = CASE WHEN EXCLUDED.role = 'admin' THEN 'admin' ELSE users.role END, updated_at = now() RETURNING id, role`, [email, profile.name || email, profile.picture || null, email === adminEmail ? 'admin' : 'member']);
+  const session = { email, name: profile.name, picture: profile.picture, role: userResult.rows[0].role, isAdmin: userResult.rows[0].role === 'admin', expires: Date.now() + 8 * 60 * 60 * 1000 };
   redirect(response, '/', { 'Set-Cookie': cookie(signSession(session), 8 * 60 * 60) });
 }
 
@@ -60,19 +68,28 @@ const server = http.createServer(async (request, response) => {
       if (!session) return send(response, 401, JSON.stringify({ authenticated: false }), { 'Content-Type': 'application/json' });
       return send(response, 200, JSON.stringify({ authenticated: true, ...session }), { 'Content-Type': 'application/json' });
     }
-    if (request.url === '/api/departments' && request.method === 'GET') {
+    if (request.url === '/api/settings' && request.method === 'GET') {
       if (!requireSession(request, response)) return;
-      const result = await pool.query(`SELECT d.id, d.name, d.color, d.head_user_id, u.name AS head_name, COUNT(dm.user_id)::int AS member_count FROM departments d LEFT JOIN users u ON u.id = d.head_user_id LEFT JOIN department_members dm ON dm.department_id = d.id GROUP BY d.id, u.name ORDER BY d.name`);
+      return json(response, 200, (await pool.query('SELECT name, logo_url FROM school_settings WHERE id = TRUE')).rows[0]);
+    }
+    if (request.url === '/api/settings' && request.method === 'PATCH') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const body = await readBody(request); const result = await pool.query('UPDATE school_settings SET name = COALESCE($1, name), logo_url = NULLIF($2, \'\'), updated_at = now() WHERE id = TRUE RETURNING name, logo_url', [body.name || null, body.logoUrl ?? null]);
+      return json(response, 200, result.rows[0]);
+    }
+    if (request.url === '/api/departments' && request.method === 'GET') {
+      const session = requireSession(request, response); if (!session) return;
+      const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT d.id, d.name, d.color, d.head_user_id, u.name AS head_name, COUNT(dm.user_id)::int AS member_count FROM departments d LEFT JOIN users u ON u.id = d.head_user_id LEFT JOIN department_members dm ON dm.department_id = d.id ${ids ? 'WHERE d.id = ANY($1::uuid[])' : ''} GROUP BY d.id, u.name ORDER BY d.name`, ids ? [ids] : []);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/departments' && request.method === 'POST') {
       const session = requireAdmin(request, response); if (!session) return;
-      const body = await readBody(request); const result = await pool.query('INSERT INTO departments (name, color) VALUES ($1, $2) RETURNING *', [body.name, body.color || 'coral']);
+      const body = await readBody(request); const result = await pool.query('INSERT INTO departments (name, color, head_user_id) VALUES ($1, $2, NULLIF($3, \'\')::uuid) RETURNING *', [body.name, body.color || 'coral', body.headUserId || '']);
       return json(response, 201, result.rows[0]);
     }
     if (request.url === '/api/users' && request.method === 'GET') {
-      const session = requireAdmin(request, response); if (!session) return;
-      const result = await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id GROUP BY u.id ORDER BY u.name`);
+      const session = requireSession(request, response); if (!session) return;
+      const ids = await accessibleDepartmentIds(session); if (!session.isAdmin && !ids.length) return json(response, 200, []); const result = session.isAdmin ? await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id GROUP BY u.id ORDER BY u.name`) : await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u JOIN department_members visible_dm ON visible_dm.user_id = u.id LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id WHERE visible_dm.department_id = ANY($1::uuid[]) GROUP BY u.id ORDER BY u.name`, [ids]);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/users' && request.method === 'POST') {
@@ -105,7 +122,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.startsWith('/api/departments/') && request.method === 'PATCH') {
       const session = requireAdmin(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE departments SET name = COALESCE($1, name), color = COALESCE($2, color), updated_at = now() WHERE id = $3 RETURNING *', [body.name || null, body.color || null, id]);
+      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE departments SET name = COALESCE($1, name), color = COALESCE($2, color), head_user_id = COALESCE(NULLIF($3, \'\')::uuid, head_user_id), updated_at = now() WHERE id = $4 RETURNING *', [body.name || null, body.color || null, body.headUserId ?? '', id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
     }
     if (request.url?.startsWith('/api/departments/') && request.method === 'DELETE') {
@@ -114,27 +131,27 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url === '/api/tasks' && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
-      const result = await pool.query(`SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to ORDER BY t.due_date NULLS LAST, t.created_at DESC`);
+      const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to ${ids ? 'WHERE t.department_id = ANY($1::uuid[])' : ''} ORDER BY t.due_date NULLS LAST, t.created_at DESC`, ids ? [ids] : []);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/meetings' && request.method === 'GET') {
-      if (!requireSession(request, response)) return;
-      const result = await pool.query(`SELECT m.*, d.name AS department_name, COUNT(ai.id)::int AS agenda_count FROM meetings m JOIN departments d ON d.id = m.department_id LEFT JOIN agenda_items ai ON ai.meeting_id = m.id GROUP BY m.id, d.name ORDER BY m.starts_at DESC`);
+      const session = requireSession(request, response); if (!session) return;
+      const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT m.*, d.name AS department_name, COUNT(ai.id)::int AS agenda_count FROM meetings m JOIN departments d ON d.id = m.department_id LEFT JOIN agenda_items ai ON ai.meeting_id = m.id ${ids ? 'WHERE m.department_id = ANY($1::uuid[])' : ''} GROUP BY m.id, d.name ORDER BY m.starts_at DESC`, ids ? [ids] : []);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/minutes' && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
-      const result = await pool.query(`SELECT mi.*, m.title AS meeting_title, m.starts_at, d.name AS department_name FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id JOIN departments d ON d.id = m.department_id ORDER BY mi.updated_at DESC`);
+      const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT mi.*, m.title AS meeting_title, m.starts_at, d.name AS department_name FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id JOIN departments d ON d.id = m.department_id ${ids ? 'WHERE m.department_id = ANY($1::uuid[])' : ''} ORDER BY mi.updated_at DESC`, ids ? [ids] : []);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/meetings' && request.method === 'POST') {
       const session = requireSession(request, response); if (!session) return;
-      const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO meetings (department_id, title, starts_at, location, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *', [body.departmentId, body.title, body.startsAt, body.location || null, user.rows[0]?.id || null]);
+      const body = await readBody(request); if (!await canManageDepartment(session, body.departmentId)) return json(response, 403, { error: 'department_manager_required' }); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO meetings (department_id, title, starts_at, location, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *', [body.departmentId, body.title, body.startsAt, body.location || null, user.rows[0]?.id || null]);
       return json(response, 201, result.rows[0]);
     }
     if (request.url?.startsWith('/api/meetings/') && !request.url.endsWith('/minutes') && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE meetings SET department_id = COALESCE($1, department_id), title = COALESCE($2, title), starts_at = COALESCE($3, starts_at), location = COALESCE($4, location), status = COALESCE($5, status), updated_at = now() WHERE id = $6 RETURNING *', [body.departmentId || null, body.title || null, body.startsAt || null, body.location || null, body.status || null, id]);
+      const id = request.url.split('/')[3]; const body = await readBody(request); const current = await pool.query('SELECT department_id FROM meetings WHERE id = $1', [id]); if (!current.rows[0] || !await canManageDepartment(session, body.departmentId || current.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const result = await pool.query('UPDATE meetings SET department_id = COALESCE($1, department_id), title = COALESCE($2, title), starts_at = COALESCE($3, starts_at), location = COALESCE($4, location), status = COALESCE($5, status), updated_at = now() WHERE id = $6 RETURNING *', [body.departmentId || null, body.title || null, body.startsAt || null, body.location || null, body.status || null, id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
     }
     if (request.url?.startsWith('/api/meetings/') && !request.url.endsWith('/minutes') && request.method === 'DELETE') {
@@ -143,7 +160,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.startsWith('/api/meetings/') && request.url.endsWith('/minutes') && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
-      const meetingId = request.url.split('/')[3]; const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO minutes (meeting_id, content, status, edited_by) VALUES ($1, $2, $3, $4) ON CONFLICT (meeting_id) DO UPDATE SET content = EXCLUDED.content, status = EXCLUDED.status, edited_by = EXCLUDED.edited_by, updated_at = now() RETURNING *', [meetingId, body.content || '', body.status || 'draft', user.rows[0]?.id || null]);
+      const meetingId = request.url.split('/')[3]; const meeting = await pool.query('SELECT department_id FROM meetings WHERE id = $1', [meetingId]); if (!meeting.rows[0] || !await canManageDepartment(session, meeting.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO minutes (meeting_id, content, status, edited_by) VALUES ($1, $2, $3, $4) ON CONFLICT (meeting_id) DO UPDATE SET content = EXCLUDED.content, status = EXCLUDED.status, edited_by = EXCLUDED.edited_by, updated_at = now() RETURNING *', [meetingId, body.content || '', body.status || 'draft', user.rows[0]?.id || null]);
       return json(response, 200, result.rows[0]);
     }
     if (request.url?.startsWith('/api/minutes/') && request.method === 'DELETE') {
@@ -151,13 +168,13 @@ const server = http.createServer(async (request, response) => {
       const id = request.url.split('/')[3]; await pool.query('DELETE FROM minutes WHERE id = $1', [id]); return json(response, 204, null);
     }
     if (request.url === '/api/tasks' && request.method === 'POST') {
-      const session = requireAdmin(request, response); if (!session) return;
-      const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO tasks (department_id, title, description, assigned_to, due_date, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [body.departmentId, body.title, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || 'pending', user.rows[0]?.id || null]);
+      const session = requireSession(request, response); if (!session) return;
+      const body = await readBody(request); if (!await canManageDepartment(session, body.departmentId)) return json(response, 403, { error: 'department_manager_required' }); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO tasks (department_id, title, description, assigned_to, due_date, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [body.departmentId, body.title, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || 'pending', user.rows[0]?.id || null]);
       return json(response, 201, result.rows[0]);
     }
     if (request.url?.startsWith('/api/tasks/') && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE tasks SET department_id = COALESCE($1, department_id), title = COALESCE($2, title), description = COALESCE($3, description), assigned_to = COALESCE($4, assigned_to), due_date = COALESCE($5, due_date), status = COALESCE($6, status), updated_at = now() WHERE id = $7 RETURNING *', [body.departmentId || null, body.title || null, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || null, id]);
+      const id = request.url.split('/')[3]; const body = await readBody(request); const current = await pool.query('SELECT department_id FROM tasks WHERE id = $1', [id]); if (!current.rows[0] || !await canManageDepartment(session, body.departmentId || current.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const result = await pool.query('UPDATE tasks SET department_id = COALESCE($1, department_id), title = COALESCE($2, title), description = COALESCE($3, description), assigned_to = COALESCE($4, assigned_to), due_date = COALESCE($5, due_date), status = COALESCE($6, status), updated_at = now() WHERE id = $7 RETURNING *', [body.departmentId || null, body.title || null, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || null, id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
     }
     if (request.url?.startsWith('/api/tasks/') && request.method === 'DELETE') {

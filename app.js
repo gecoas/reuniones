@@ -10,7 +10,7 @@ const renderAdminList = () => {
   const items = adminData[adminSection];
   const labels = { departments: 'Departamentos', users: 'Usuarios', meetings: 'Reuniones', minutes: 'Actas', tasks: 'Tareas' };
   const columns = { departments: ['Departamento', 'Miembros'], users: ['Nombre', 'Rol'], meetings: ['Reunión', 'Fecha'], minutes: ['Acta', 'Estado'], tasks: ['Tarea', 'Estado'] };
-  const details = { departments: item => [item.name, `${item.member_count} miembros`], users: item => [item.name || item.email, item.role === 'admin' ? 'Administrador' : 'Miembro'], meetings: item => [item.title, formatDate(item.starts_at)], minutes: item => [item.meeting_title, item.status === 'sent' ? 'Enviada' : 'Borrador'], tasks: item => [item.title, item.status === 'done' ? 'Hecha' : item.status === 'in_progress' ? 'En curso' : 'Pendiente'] };
+  const details = { departments: item => [item.name, `${item.member_count} miembros`], users: item => [item.name || item.email, item.role === 'admin' ? 'Administrador' : item.role === 'manager' ? 'Gestor' : 'Profesor'], meetings: item => [item.title, formatDate(item.starts_at)], minutes: item => [item.meeting_title, item.status === 'sent' ? 'Enviada' : 'Borrador'], tasks: item => [item.title, item.status === 'done' ? 'Hecha' : item.status === 'in_progress' ? 'En curso' : 'Pendiente'] };
   const actions = item => `<div class="table-actions">${adminSection === 'departments' ? `<button title="Gestionar miembros" aria-label="Gestionar miembros" data-members="${escapeHtml(item.id)}">Personas</button>` : ''}<button title="Editar" aria-label="Editar" data-edit="${escapeHtml(item.id)}" data-type="${adminSection}">Editar</button><button class="danger" title="Eliminar" aria-label="Eliminar" data-delete="${escapeHtml(item.id)}" data-type="${adminSection}">Eliminar</button></div>`;
   list.innerHTML = `<div class="admin-table-wrap"><table class="admin-table"><thead><tr>${columns[adminSection].map(column => `<th>${column}</th>`).join('')}<th>Acciones</th></tr></thead><tbody>${items.map(item => `<tr><td title="${escapeHtml(details[adminSection](item)[0])}">${escapeHtml(details[adminSection](item)[0])}</td><td>${escapeHtml(details[adminSection](item)[1])}</td><td>${actions(item)}</td></tr>`).join('') || `<tr><td colspan="3" class="empty-cell">No hay ${labels[adminSection].toLowerCase()} todavía.</td></tr>`}</tbody></table></div>`;
 };
@@ -19,11 +19,12 @@ const options = (items, value, label) => items.map(item => `<option value="${esc
 const openRecordForm = (type, record = null) => {
   formState = { type, record };
   const fields = document.querySelector('#recordFields');
-  const titles = { departments: 'Departamento', users: 'Usuario', meetings: 'Reunión', minutes: 'Acta', tasks: 'Tarea', members: 'Miembros del departamento' };
+  const titles = { departments: 'Departamento', users: 'Usuario', meetings: 'Reunión', minutes: 'Acta', tasks: 'Tarea', members: 'Miembros del departamento', settings: 'Configuración del centro' };
   document.querySelector('#recordTitle').textContent = `${record ? 'Editar' : 'Crear'} ${titles[type]}`;
   const value = key => escapeHtml(record?.[key] || '');
-  if (type === 'departments') fields.innerHTML = `<label>Nombre<input name="name" required value="${value('name')}"></label><label>Color<select name="color"><option value="coral" ${record?.color === 'coral' ? 'selected' : ''}>Coral</option><option value="blue" ${record?.color === 'blue' ? 'selected' : ''}>Azul</option><option value="gold" ${record?.color === 'gold' ? 'selected' : ''}>Oro</option></select></label>`;
-  if (type === 'users') fields.innerHTML = `<label>Nombre completo<input name="name" required value="${value('name')}"></label><label>Correo electrónico<input name="email" type="email" required ${record ? 'readonly' : ''} value="${value('email')}"></label><label>Permiso<select name="role"><option value="member" ${record?.role === 'member' ? 'selected' : ''}>Miembro</option><option value="admin" ${record?.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>`;
+  if (type === 'departments') fields.innerHTML = `<label>Nombre<input name="name" required value="${value('name')}"></label><label>Gestor del departamento<select name="headUserId"><option value="">Sin asignar</option>${options(adminData.users.filter(user => user.role === 'manager'), record?.head_user_id, user => user.name || user.email)}</select></label><label>Color<select name="color"><option value="coral" ${record?.color === 'coral' ? 'selected' : ''}>Coral</option><option value="blue" ${record?.color === 'blue' ? 'selected' : ''}>Azul</option><option value="gold" ${record?.color === 'gold' ? 'selected' : ''}>Oro</option></select></label>`;
+  if (type === 'users') fields.innerHTML = `<label>Nombre completo<input name="name" required value="${value('name')}"></label><label>Correo electrónico<input name="email" type="email" required ${record ? 'readonly' : ''} value="${value('email')}"></label><label>Permiso<select name="role"><option value="member" ${record?.role === 'member' ? 'selected' : ''}>Profesor</option><option value="manager" ${record?.role === 'manager' ? 'selected' : ''}>Gestor</option><option value="admin" ${record?.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>`;
+  if (type === 'settings') fields.innerHTML = `<label>Nombre del centro<input name="name" required value="${value('name')}"></label><label>URL del logotipo<input name="logoUrl" type="url" value="${value('logo_url')}"></label><p class="form-help">Puedes usar una URL pública de imagen para el logotipo.</p>`;
   if (type === 'meetings') fields.innerHTML = `<label>Título<input name="title" required value="${value('title')}"></label><label>Departamento<select name="departmentId" required>${options(adminData.departments, record?.department_id, item => item.name)}</select></label><div class="form-row"><label>Fecha y hora<input name="startsAt" type="datetime-local" required value="${record?.starts_at ? new Date(record.starts_at).toISOString().slice(0, 16) : ''}"></label><label>Lugar<input name="location" value="${value('location')}"></label></div>`;
   if (type === 'minutes') fields.innerHTML = `${record ? '' : `<label>Reunión<select name="meetingId" required>${options(adminData.meetings, '', item => item.title)}</select></label>`}<label>Contenido<textarea name="content" required>${value('content')}</textarea></label><label>Estado<select name="status"><option value="draft" ${record?.status === 'draft' ? 'selected' : ''}>Borrador</option><option value="review" ${record?.status === 'review' ? 'selected' : ''}>En revisión</option><option value="sent" ${record?.status === 'sent' ? 'selected' : ''}>Enviada</option></select></label>`;
   if (type === 'tasks') fields.innerHTML = `<label>Título<input name="title" required value="${value('title')}"></label><label>Departamento<select name="departmentId" required>${options(adminData.departments, record?.department_id, item => item.name)}</select></label><label>Responsable<select name="assignedTo"><option value="">Sin asignar</option>${options(adminData.users, record?.assigned_to, item => item.name || item.email)}</select></label><div class="form-row"><label>Fecha límite<input name="dueDate" type="date" value="${value('due_date')}"></label><label>Estado<select name="status"><option value="pending" ${record?.status === 'pending' ? 'selected' : ''}>Pendiente</option><option value="in_progress" ${record?.status === 'in_progress' ? 'selected' : ''}>En curso</option><option value="done" ${record?.status === 'done' ? 'selected' : ''}>Hecha</option></select></label></div>`;
@@ -42,6 +43,9 @@ const saveRecordForm = async event => {
     const current = adminData.users.filter(user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).some(department => department.id === record.id));
     await Promise.all(adminData.users.filter(user => selected.has(user.id) && !current.some(member => member.id === user.id)).map(user => api(`/api/departments/${record.id}/members`, { method: 'POST', body: JSON.stringify({ userId: user.id }) })));
     await Promise.all(current.filter(user => !selected.has(user.id)).map(user => api(`/api/departments/${record.id}/members/${user.id}`, { method: 'DELETE' })));
+  } else if (type === 'settings') {
+    await api('/api/settings', { method: 'PATCH', body: JSON.stringify(data) });
+    await loadSchool();
   } else if (type === 'minutes') {
     await api(`/api/meetings/${record?.meeting_id || data.meetingId}/minutes`, { method: 'PATCH', body: JSON.stringify(data) });
   } else {
@@ -81,6 +85,7 @@ const loadDashboard = async () => renderDashboard(Object.fromEntries(await Promi
 const authScreen = document.querySelector('#authScreen');
 const appShell = document.querySelector('.app-shell');
 const isGithubPreview = window.location.hostname.endsWith('github.io');
+const loadSchool = async () => { const settings = await api('/api/settings'); document.querySelector('#schoolName').textContent = settings.name; if (settings.logo_url) { const logo = document.querySelector('#schoolLogo'); logo.style.backgroundImage = `url(${settings.logo_url})`; logo.textContent = ''; } };
 fetch('/api/session').then(response => {
   if (!response.ok) throw new Error('unauthenticated');
   return response.json();
@@ -91,15 +96,18 @@ fetch('/api/session').then(response => {
   if (profile) profile.querySelector('strong').textContent = session.name || session.email;
   if (profile) profile.querySelector('small').textContent = session.isAdmin ? 'Administrador de la plataforma' : session.email;
   const firstName = (session.name || session.email).split(' ')[0];
+  document.querySelector('#todayDate').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase();
   document.querySelector('#welcomeName').innerHTML = `Buenos días, ${escapeHtml(firstName)} <span>✦</span>`;
   ['#userAvatar', '#profileAvatar'].forEach(selector => { const avatar = document.querySelector(selector); if (avatar) { avatar.textContent = firstName.slice(0, 2).toUpperCase(); if (session.picture) avatar.style.backgroundImage = `url(${session.picture})`; } });
-  if (session.isAdmin) {
+  if (session.isAdmin || session.role === 'manager') {
     const admin = document.querySelector('#adminNav');
     admin.hidden = false;
     admin.style.display = 'flex';
+    admin.textContent = session.isAdmin ? '⚙ Administración' : '⚙ Gestión de departamentos';
+    document.querySelectorAll('.admin-only').forEach(button => { button.hidden = !session.isAdmin; });
     admin.addEventListener('click', async () => { document.querySelector('#adminModal').classList.add('open'); try { await loadAdminData(); } catch { showToast('No se pudieron cargar los datos de administración'); } });
   }
-  loadDashboard().catch(() => showToast('No se pudieron cargar los datos del resumen'));
+  Promise.all([loadDashboard(), loadSchool()]).catch(() => showToast('No se pudieron cargar los datos del resumen'));
 }).catch(() => {
   if (isGithubPreview) {
     authScreen.remove();
@@ -123,7 +131,7 @@ document.querySelectorAll('.check:not(.checked)').forEach(check => check.addEven
 document.querySelector('#mobileMenu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
 document.querySelector('#closeAdmin').addEventListener('click', () => document.querySelector('#adminModal').classList.remove('open'));
 document.querySelectorAll('.admin-tab').forEach(tab => tab.addEventListener('click', () => { adminSection = tab.dataset.adminSection; document.querySelectorAll('.admin-tab').forEach(item => item.classList.toggle('active', item === tab)); renderAdminList(); }));
-document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => openRecordForm(button.dataset.action === 'department' ? 'departments' : `${button.dataset.action}s`)));
+document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => openRecordForm(button.dataset.action === 'department' ? 'departments' : button.dataset.action === 'settings' ? 'settings' : `${button.dataset.action}s`)));
 document.querySelector('#adminList').addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   try {
