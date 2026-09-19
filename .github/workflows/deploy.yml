@@ -17,6 +17,7 @@ jobs:
     env:
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
 
     steps:
       - name: Deploy by local runner
@@ -43,6 +44,7 @@ jobs:
           ADMIN_EMAIL=gbailly@alcaste-lasfuentes.com
           GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
           GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
+          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
           EOF
           chmod 600 "$APP_ENV"
           REMOTE_ENV=$(ssh deploy@$PROD_HOST "umask 077; mktemp /tmp/reuniones-app.XXXXXX")

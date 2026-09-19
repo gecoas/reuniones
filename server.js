@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import { Pool } from 'pg';
 
 dotenv.config();
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -14,12 +15,19 @@ const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const adminEmail = (process.env.ADMIN_EMAIL || 'gbailly@alcaste-lasfuentes.com').toLowerCase();
 const redirectUri = `${appUrl}/auth/google/callback`;
 const sessionSecret = process.env.SESSION_SECRET || clientSecret || 'reuniones-session-change-me';
+const pool = new Pool({ connectionString: process.env.DATABASE_URL || 'postgres://reuniones:reuniones@localhost:5432/reuniones' });
+const schema = fs.readFileSync(path.join(root, 'schema.sql'), 'utf8');
 const cookie = (token, maxAge) => `session=${token}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
 const parseCookies = request => Object.fromEntries((request.headers.cookie || '').split(';').filter(Boolean).map(value => { const [key, ...rest] = value.trim().split('='); return [key, rest.join('=')]; }));
 const signSession = session => { const payload = Buffer.from(JSON.stringify(session)).toString('base64url'); const signature = crypto.createHmac('sha256', sessionSecret).update(payload).digest('base64url'); return `${payload}.${signature}`; };
 const readSession = token => { try { const [payload, signature] = String(token || '').split('.'); const expected = crypto.createHmac('sha256', sessionSecret).update(payload).digest('base64url'); if (!payload || !signature || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null; const session = JSON.parse(Buffer.from(payload, 'base64url').toString()); return session.expires > Date.now() ? session : null; } catch { return null; } };
 const send = (response, status, body, headers = {}) => { response.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', ...headers }); response.end(body); };
 const redirect = (response, location, headers = {}) => { response.writeHead(302, { Location: location, ...headers }); response.end(); };
+const readBody = request => new Promise((resolve, reject) => { let body = ''; request.on('data', chunk => { body += chunk; if (body.length > 1_000_000) reject(new Error('Request too large')); }); request.on('end', () => resolve(body ? JSON.parse(body) : {})); request.on('error', reject); });
+const json = (response, status, body) => send(response, status, JSON.stringify(body), { 'Content-Type': 'application/json' });
+const getRequestSession = request => readSession(parseCookies(request).session);
+const requireSession = (request, response) => { const session = getRequestSession(request); if (!session) { json(response, 401, { error: 'authentication_required' }); return null; } return session; };
+const requireAdmin = (request, response) => { const session = requireSession(request, response); if (session && !session.isAdmin) { json(response, 403, { error: 'admin_required' }); return null; } return session; };
 
 async function callback(request, response) {
   const query = new URL(request.url, appUrl).searchParams;
@@ -33,6 +41,7 @@ async function callback(request, response) {
   const profile = await profileResponse.json();
   const email = String(profile.email || '').toLowerCase();
   if (!email.endsWith('@alcaste-lasfuentes.com')) return redirect(response, '/?error=domain_not_allowed');
+  const userResult = await pool.query(`INSERT INTO users (email, name, picture, role) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, picture = EXCLUDED.picture, updated_at = now() RETURNING id`, [email, profile.name || email, profile.picture || null, email === adminEmail ? 'admin' : 'member']);
   const session = { email, name: profile.name, picture: profile.picture, isAdmin: email === adminEmail, expires: Date.now() + 8 * 60 * 60 * 1000 };
   redirect(response, '/', { 'Set-Cookie': cookie(signSession(session), 8 * 60 * 60) });
 }
@@ -51,6 +60,66 @@ const server = http.createServer(async (request, response) => {
       if (!session) return send(response, 401, JSON.stringify({ authenticated: false }), { 'Content-Type': 'application/json' });
       return send(response, 200, JSON.stringify({ authenticated: true, ...session }), { 'Content-Type': 'application/json' });
     }
+    if (request.url === '/api/departments' && request.method === 'GET') {
+      if (!requireSession(request, response)) return;
+      const result = await pool.query(`SELECT d.id, d.name, d.color, d.head_user_id, u.name AS head_name, COUNT(dm.user_id)::int AS member_count FROM departments d LEFT JOIN users u ON u.id = d.head_user_id LEFT JOIN department_members dm ON dm.department_id = d.id GROUP BY d.id, u.name ORDER BY d.name`);
+      return json(response, 200, result.rows);
+    }
+    if (request.url === '/api/departments' && request.method === 'POST') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const body = await readBody(request); const result = await pool.query('INSERT INTO departments (name, color) VALUES ($1, $2) RETURNING *', [body.name, body.color || 'coral']);
+      return json(response, 201, result.rows[0]);
+    }
+    if (request.url === '/api/users' && request.method === 'GET') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const result = await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id GROUP BY u.id ORDER BY u.name`);
+      return json(response, 200, result.rows);
+    }
+    if (request.url?.startsWith('/api/users/') && request.method === 'PATCH') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE users SET role = COALESCE($1, role), updated_at = now() WHERE id = $2 RETURNING id, email, name, role', [body.role || null, id]);
+      return json(response, 200, result.rows[0] || { error: 'not_found' });
+    }
+    if (request.url?.startsWith('/api/departments/') && request.method === 'PATCH') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE departments SET name = COALESCE($1, name), color = COALESCE($2, color), updated_at = now() WHERE id = $3 RETURNING *', [body.name || null, body.color || null, id]);
+      return json(response, 200, result.rows[0] || { error: 'not_found' });
+    }
+    if (request.url === '/api/tasks' && request.method === 'GET') {
+      const session = requireSession(request, response); if (!session) return;
+      const result = await pool.query(`SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to ORDER BY t.due_date NULLS LAST, t.created_at DESC`);
+      return json(response, 200, result.rows);
+    }
+    if (request.url === '/api/meetings' && request.method === 'GET') {
+      if (!requireSession(request, response)) return;
+      const result = await pool.query(`SELECT m.*, d.name AS department_name, COUNT(ai.id)::int AS agenda_count FROM meetings m JOIN departments d ON d.id = m.department_id LEFT JOIN agenda_items ai ON ai.meeting_id = m.id GROUP BY m.id, d.name ORDER BY m.starts_at DESC`);
+      return json(response, 200, result.rows);
+    }
+    if (request.url === '/api/meetings' && request.method === 'POST') {
+      const session = requireSession(request, response); if (!session) return;
+      const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO meetings (department_id, title, starts_at, location, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *', [body.departmentId, body.title, body.startsAt, body.location || null, user.rows[0]?.id || null]);
+      return json(response, 201, result.rows[0]);
+    }
+    if (request.url?.startsWith('/api/meetings/') && !request.url.endsWith('/minutes') && request.method === 'PATCH') {
+      const session = requireSession(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE meetings SET title = COALESCE($1, title), starts_at = COALESCE($2, starts_at), location = COALESCE($3, location), status = COALESCE($4, status), updated_at = now() WHERE id = $5 RETURNING *', [body.title || null, body.startsAt || null, body.location || null, body.status || null, id]);
+      return json(response, 200, result.rows[0] || { error: 'not_found' });
+    }
+    if (request.url?.startsWith('/api/meetings/') && request.url.endsWith('/minutes') && request.method === 'PATCH') {
+      const session = requireSession(request, response); if (!session) return;
+      const meetingId = request.url.split('/')[3]; const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO minutes (meeting_id, content, status, edited_by) VALUES ($1, $2, $3, $4) ON CONFLICT (meeting_id) DO UPDATE SET content = EXCLUDED.content, status = EXCLUDED.status, edited_by = EXCLUDED.edited_by, updated_at = now() RETURNING *', [meetingId, body.content || '', body.status || 'draft', user.rows[0]?.id || null]);
+      return json(response, 200, result.rows[0]);
+    }
+    if (request.url === '/api/tasks' && request.method === 'POST') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO tasks (department_id, title, description, assigned_to, due_date, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [body.departmentId, body.title, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || 'pending', user.rows[0]?.id || null]);
+      return json(response, 201, result.rows[0]);
+    }
+    if (request.url?.startsWith('/api/tasks/') && request.method === 'PATCH') {
+      const session = requireSession(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE tasks SET title = COALESCE($1, title), description = COALESCE($2, description), assigned_to = COALESCE($3, assigned_to), due_date = COALESCE($4, due_date), status = COALESCE($5, status), updated_at = now() WHERE id = $6 RETURNING *', [body.title || null, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || null, id]);
+      return json(response, 200, result.rows[0] || { error: 'not_found' });
+    }
     const requested = new URL(request.url, appUrl).pathname;
     const file = requested === '/' ? 'index.html' : requested.slice(1);
     const filePath = path.resolve(root, file);
@@ -59,4 +128,8 @@ const server = http.createServer(async (request, response) => {
     send(response, 200, fs.readFileSync(filePath), { 'Content-Type': types[path.extname(filePath)] || 'application/octet-stream' });
   } catch (error) { console.error(error); send(response, 500, 'Error interno'); }
 });
-server.listen(port, '0.0.0.0', () => console.log(`Reuniones escuchando en ${port}`));
+async function start() {
+  await pool.query(schema);
+  server.listen(port, '0.0.0.0', () => console.log(`Reuniones escuchando en ${port}`));
+}
+start().catch(error => { console.error('No se pudo inicializar PostgreSQL', error); process.exit(1); });

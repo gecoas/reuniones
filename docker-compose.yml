@@ -1,4 +1,20 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: reuniones-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: reuniones
+      POSTGRES_USER: reuniones
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cambia-esta-clave}
+    volumes:
+      - reuniones_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reuniones -d reuniones"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   reuniones:
     build: .
     container_name: reuniones-gecoas
@@ -12,3 +28,10 @@ services:
       - ADMIN_EMAIL=gbailly@alcaste-lasfuentes.com
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - DATABASE_URL=postgres://reuniones:${POSTGRES_PASSWORD:-cambia-esta-clave}@db:5432/reuniones
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  reuniones_postgres_data:
