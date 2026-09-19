@@ -24,6 +24,24 @@ const loadAdminData = async () => {
   adminData = { departments, users, meetings, minutes, tasks };
   renderAdminList();
 };
+const formatDate = value => new Date(value).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+const renderDashboard = ({ meetings, tasks, minutes }) => {
+  const nextMeeting = meetings.filter(meeting => new Date(meeting.starts_at) >= new Date()).sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))[0];
+  const pendingTasks = tasks.filter(task => task.status !== 'done');
+  const statCards = document.querySelectorAll('.stat-card');
+  if (statCards[0]) statCards[0].innerHTML = `<div class="stat-head"><span>Próxima reunión</span><span class="mini-icon coral-bg">◷</span></div><strong>${nextMeeting ? formatDate(nextMeeting.starts_at) : 'Sin reuniones'}</strong><p>${nextMeeting ? `${escapeHtml(nextMeeting.department_name)} · ${new Date(nextMeeting.starts_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Crea una desde Administración'}</p>`;
+  if (statCards[1]) statCards[1].innerHTML = `<div class="stat-head"><span>Tareas pendientes</span><span class="mini-icon blue-bg">✓</span></div><strong class="big-number">${pendingTasks.length}</strong><p>${tasks.length ? `${tasks.filter(task => task.status === 'done').length} completadas` : 'No hay tareas creadas'}</p>`;
+  if (statCards[2]) statCards[2].innerHTML = `<div class="stat-head"><span>Actas por revisar</span><span class="mini-icon gold-bg">▤</span></div><strong class="big-number">${minutes.filter(minute => minute.status !== 'sent').length}</strong><p>${minutes.length ? 'De tus departamentos' : 'No hay actas creadas'}</p>`;
+  const heading = document.querySelector('.section-heading h2');
+  if (heading) heading.textContent = nextMeeting?.department_name || 'Actividad reciente';
+  const agendaPanel = document.querySelector('.agenda-panel');
+  if (agendaPanel) agendaPanel.innerHTML = nextMeeting ? `<div class="panel-header"><div><span class="label-with-dot"><i class="dot coral"></i> PRÓXIMA REUNIÓN</span><h3>${escapeHtml(nextMeeting.title)}</h3><p class="muted">${formatDate(nextMeeting.starts_at)} · ${new Date(nextMeeting.starts_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</p></div></div><div class="meeting-meta"><div><span class="meta-icon">⌂</span><span>${escapeHtml(nextMeeting.location || 'Sin ubicación')}</span></div></div><div class="agenda-preview"><div class="agenda-title"><strong>Orden del día</strong><span>${nextMeeting.agenda_count} puntos</span></div><button class="button outline full" id="openAgenda">Gestionar reunión <span>→</span></button></div>` : `<div class="panel-header"><div><span class="label-with-dot"><i class="dot coral"></i> PRÓXIMA REUNIÓN</span><h3>No hay reuniones programadas</h3><p class="muted">Crea una reunión desde Administración.</p></div></div>`;
+  const taskList = document.querySelector('.task-list');
+  if (taskList) taskList.innerHTML = tasks.slice(0, 4).map(task => `<div class="task-row"><span class="check ${task.status === 'done' ? 'checked' : ''}">${task.status === 'done' ? '✓' : ''}</span><div class="task-copy"><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.assignee_name || 'Sin responsable')}${task.due_date ? ` · Vence ${formatDate(task.due_date)}` : ''}</small></div><span class="task-status ${task.status === 'done' ? 'done' : task.status === 'in_progress' ? 'progress' : 'pending'}">${task.status === 'done' ? 'Hecha' : task.status === 'in_progress' ? 'En curso' : 'Pendiente'}</span></div>`).join('') || '<p class="muted">No hay tareas creadas.</p>';
+  const minutesPanel = document.querySelector('.minutes-panel');
+  if (minutesPanel) minutesPanel.innerHTML = `<div class="panel-header"><div><span class="label-with-dot"><i class="dot gold"></i> DOCUMENTACIÓN</span><h3>Últimas actas</h3></div></div>${minutes.slice(0, 3).map(minute => `<div class="minutes-row"><div class="doc-icon">▤</div><div class="doc-copy"><strong>Acta · ${escapeHtml(minute.meeting_title)}</strong><small>${escapeHtml(minute.department_name)} · ${formatDate(minute.updated_at)}</small></div><span class="${minute.status === 'sent' ? 'sent-tag' : 'review-tag'}">${minute.status === 'sent' ? 'Enviada' : 'Por revisar'}</span></div>`).join('') || '<p class="muted">No hay actas creadas.</p>'}`;
+};
+const loadDashboard = async () => renderDashboard(Object.fromEntries(await Promise.all(['meetings', 'tasks', 'minutes'].map(async resource => [resource, await api(`/api/${resource}`)]))));
 const createAdminRecord = async action => {
   try {
     if (action === 'department') {
@@ -73,8 +91,10 @@ fetch('/api/session').then(response => {
   if (session.isAdmin) {
     const admin = document.querySelector('#adminNav');
     admin.hidden = false;
+    admin.style.display = 'flex';
     admin.addEventListener('click', async () => { document.querySelector('#adminModal').classList.add('open'); try { await loadAdminData(); } catch { showToast('No se pudieron cargar los datos de administración'); } });
   }
+  loadDashboard().catch(() => showToast('No se pudieron cargar los datos del resumen'));
 }).catch(() => {
   if (isGithubPreview) {
     authScreen.remove();
