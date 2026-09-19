@@ -9,48 +9,46 @@ const renderAdminList = () => {
   const list = document.querySelector('#adminList');
   const items = adminData[adminSection];
   const labels = { departments: 'Departamentos', users: 'Usuarios', meetings: 'Reuniones', minutes: 'Actas', tasks: 'Tareas' };
-  const empty = `<div class="admin-item"><div><strong>No hay ${labels[adminSection].toLowerCase()} todavía</strong><small>Usa una de las acciones de abajo para crear el primer registro.</small></div></div>`;
-  const controls = (id, type, members = false) => `<div class="admin-item-actions">${members ? `<button data-members="${escapeHtml(id)}">Miembros</button>` : ''}<button data-edit="${escapeHtml(id)}" data-type="${type}">Editar</button><button class="danger" data-delete="${escapeHtml(id)}" data-type="${type}">Eliminar</button></div>`;
-  const content = {
-    departments: items.map(d => `<div class="admin-item"><span class="dot ${escapeHtml(d.color)}"></span><div><strong>${escapeHtml(d.name)}</strong><small>${d.member_count} miembros${d.head_name ? ` · ${escapeHtml(d.head_name)}` : ''}</small></div>${controls(d.id, 'departments', true)}</div>`),
-    users: items.map(u => `<div class="admin-item"><div class="avatar avatar-small">${escapeHtml((u.name || u.email).slice(0, 2).toUpperCase())}</div><div><strong>${escapeHtml(u.name || u.email)}</strong><small>${escapeHtml(u.email)} · ${u.role === 'admin' ? 'Administrador' : 'Miembro'}</small></div>${controls(u.id, 'users')}</div>`),
-    meetings: items.map(m => `<div class="admin-item"><span class="dot blue"></span><div><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(m.department_name)} · ${new Date(m.starts_at).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}</small></div>${controls(m.id, 'meetings')}</div>`),
-    minutes: items.map(m => `<div class="admin-item"><span class="doc-icon">▤</span><div><strong>Acta · ${escapeHtml(m.meeting_title)}</strong><small>${escapeHtml(m.department_name)} · ${m.status === 'sent' ? 'Enviada' : 'Borrador'}</small></div>${controls(m.id, 'minutes')}</div>`),
-    tasks: items.map(t => `<div class="admin-item"><span class="check ${t.status === 'done' ? 'checked' : ''}">${t.status === 'done' ? '✓' : ''}</span><div><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(t.assignee_name || 'Sin responsable')} · ${escapeHtml(t.status)}</small></div>${controls(t.id, 'tasks')}</div>`)
-  };
-  list.innerHTML = `<div class="admin-list-head"><strong>${labels[adminSection]}</strong><span>${items.length}</span></div>${content[adminSection].join('') || empty}`;
+  const columns = { departments: ['Departamento', 'Miembros'], users: ['Nombre', 'Rol'], meetings: ['Reunión', 'Fecha'], minutes: ['Acta', 'Estado'], tasks: ['Tarea', 'Estado'] };
+  const details = { departments: item => [item.name, `${item.member_count} miembros`], users: item => [item.name || item.email, item.role === 'admin' ? 'Administrador' : 'Miembro'], meetings: item => [item.title, formatDate(item.starts_at)], minutes: item => [item.meeting_title, item.status === 'sent' ? 'Enviada' : 'Borrador'], tasks: item => [item.title, item.status === 'done' ? 'Hecha' : item.status === 'in_progress' ? 'En curso' : 'Pendiente'] };
+  const actions = item => `<div class="table-actions">${adminSection === 'departments' ? `<button title="Gestionar miembros" aria-label="Gestionar miembros" data-members="${escapeHtml(item.id)}">Personas</button>` : ''}<button title="Editar" aria-label="Editar" data-edit="${escapeHtml(item.id)}" data-type="${adminSection}">Editar</button><button class="danger" title="Eliminar" aria-label="Eliminar" data-delete="${escapeHtml(item.id)}" data-type="${adminSection}">Eliminar</button></div>`;
+  list.innerHTML = `<div class="admin-table-wrap"><table class="admin-table"><thead><tr>${columns[adminSection].map(column => `<th>${column}</th>`).join('')}<th>Acciones</th></tr></thead><tbody>${items.map(item => `<tr><td title="${escapeHtml(details[adminSection](item)[0])}">${escapeHtml(details[adminSection](item)[0])}</td><td>${escapeHtml(details[adminSection](item)[1])}</td><td>${actions(item)}</td></tr>`).join('') || `<tr><td colspan="3" class="empty-cell">No hay ${labels[adminSection].toLowerCase()} todavía.</td></tr>`}</tbody></table></div>`;
 };
-const manageMembers = async departmentId => {
-  const department = adminData.departments.find(item => item.id === departmentId);
-  const inDepartment = user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).some(item => item.id === departmentId);
-  const members = adminData.users.filter(inDepartment);
-  const action = window.prompt(`Miembros de ${department.name}:\n${members.map((user, index) => `${index + 1}. ${user.name}`).join('\n') || 'Ninguno'}\n\nEscribe A para añadir o Q para quitar.`);
-  if (!action) return;
-  if (action.toUpperCase() === 'A') {
-    const candidates = adminData.users.filter(user => !inDepartment(user));
-    const selected = window.prompt(`Usuario que añadir:\n${candidates.map((user, index) => `${index + 1}. ${user.name} (${user.email})`).join('\n')}`);
-    const user = candidates[Number(selected) - 1]; if (!user) return;
-    await api(`/api/departments/${departmentId}/members`, { method: 'POST', body: JSON.stringify({ userId: user.id }) });
+let formState = null;
+const options = (items, value, label) => items.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === value ? 'selected' : ''}>${escapeHtml(label(item))}</option>`).join('');
+const openRecordForm = (type, record = null) => {
+  formState = { type, record };
+  const fields = document.querySelector('#recordFields');
+  const titles = { departments: 'Departamento', users: 'Usuario', meetings: 'Reunión', minutes: 'Acta', tasks: 'Tarea', members: 'Miembros del departamento' };
+  document.querySelector('#recordTitle').textContent = `${record ? 'Editar' : 'Crear'} ${titles[type]}`;
+  const value = key => escapeHtml(record?.[key] || '');
+  if (type === 'departments') fields.innerHTML = `<label>Nombre<input name="name" required value="${value('name')}"></label><label>Color<select name="color"><option value="coral" ${record?.color === 'coral' ? 'selected' : ''}>Coral</option><option value="blue" ${record?.color === 'blue' ? 'selected' : ''}>Azul</option><option value="gold" ${record?.color === 'gold' ? 'selected' : ''}>Oro</option></select></label>`;
+  if (type === 'users') fields.innerHTML = `<label>Nombre completo<input name="name" required value="${value('name')}"></label><label>Correo electrónico<input name="email" type="email" required ${record ? 'readonly' : ''} value="${value('email')}"></label><label>Permiso<select name="role"><option value="member" ${record?.role === 'member' ? 'selected' : ''}>Miembro</option><option value="admin" ${record?.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>`;
+  if (type === 'meetings') fields.innerHTML = `<label>Título<input name="title" required value="${value('title')}"></label><label>Departamento<select name="departmentId" required>${options(adminData.departments, record?.department_id, item => item.name)}</select></label><div class="form-row"><label>Fecha y hora<input name="startsAt" type="datetime-local" required value="${record?.starts_at ? new Date(record.starts_at).toISOString().slice(0, 16) : ''}"></label><label>Lugar<input name="location" value="${value('location')}"></label></div>`;
+  if (type === 'minutes') fields.innerHTML = `${record ? '' : `<label>Reunión<select name="meetingId" required>${options(adminData.meetings, '', item => item.title)}</select></label>`}<label>Contenido<textarea name="content" required>${value('content')}</textarea></label><label>Estado<select name="status"><option value="draft" ${record?.status === 'draft' ? 'selected' : ''}>Borrador</option><option value="review" ${record?.status === 'review' ? 'selected' : ''}>En revisión</option><option value="sent" ${record?.status === 'sent' ? 'selected' : ''}>Enviada</option></select></label>`;
+  if (type === 'tasks') fields.innerHTML = `<label>Título<input name="title" required value="${value('title')}"></label><label>Departamento<select name="departmentId" required>${options(adminData.departments, record?.department_id, item => item.name)}</select></label><label>Responsable<select name="assignedTo"><option value="">Sin asignar</option>${options(adminData.users, record?.assigned_to, item => item.name || item.email)}</select></label><div class="form-row"><label>Fecha límite<input name="dueDate" type="date" value="${value('due_date')}"></label><label>Estado<select name="status"><option value="pending" ${record?.status === 'pending' ? 'selected' : ''}>Pendiente</option><option value="in_progress" ${record?.status === 'in_progress' ? 'selected' : ''}>En curso</option><option value="done" ${record?.status === 'done' ? 'selected' : ''}>Hecha</option></select></label></div>`;
+  if (type === 'members') {
+    const assigned = user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).some(department => department.id === record.id);
+    fields.innerHTML = `<p class="form-help">Selecciona los usuarios que pertenecen a <strong>${escapeHtml(record.name)}</strong>.</p><div class="member-checks">${adminData.users.map(user => `<label><input type="checkbox" name="member" value="${escapeHtml(user.id)}" ${assigned(user) ? 'checked' : ''}><span>${escapeHtml(user.name || user.email)}</span><small>${escapeHtml(user.email)}</small></label>`).join('') || '<p>No hay usuarios creados.</p>'}</div>`;
   }
-  if (action.toUpperCase() === 'Q') {
-    const selected = window.prompt(`Usuario que quitar:\n${members.map((user, index) => `${index + 1}. ${user.name}`).join('\n')}`);
-    const user = members[Number(selected) - 1]; if (!user) return;
-    await api(`/api/departments/${departmentId}/members/${user.id}`, { method: 'DELETE' });
-  }
-  await loadAdminData();
+  document.querySelector('#recordModal').classList.add('open');
 };
-const editAdminRecord = async (type, id) => {
-  const record = adminData[type].find(item => item.id === id);
-  if (!record) return;
-  if (type === 'minutes') {
-    const content = window.prompt('Contenido del acta', record.content); if (content === null) return;
-    await api(`/api/meetings/${record.meeting_id}/minutes`, { method: 'PATCH', body: JSON.stringify({ content, status: record.status }) });
+const saveRecordForm = async event => {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget));
+  const { type, record } = formState;
+  if (type === 'members') {
+    const selected = new Set(new FormData(event.currentTarget).getAll('member'));
+    const current = adminData.users.filter(user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).some(department => department.id === record.id));
+    await Promise.all(adminData.users.filter(user => selected.has(user.id) && !current.some(member => member.id === user.id)).map(user => api(`/api/departments/${record.id}/members`, { method: 'POST', body: JSON.stringify({ userId: user.id }) })));
+    await Promise.all(current.filter(user => !selected.has(user.id)).map(user => api(`/api/departments/${record.id}/members/${user.id}`, { method: 'DELETE' })));
+  } else if (type === 'minutes') {
+    await api(`/api/meetings/${record?.meeting_id || data.meetingId}/minutes`, { method: 'PATCH', body: JSON.stringify(data) });
   } else {
-    const label = type === 'users' ? 'Nombre del usuario' : type === 'tasks' ? 'Título de la tarea' : type === 'meetings' ? 'Título de la reunión' : 'Nombre del departamento';
-    const value = window.prompt(label, record.name || record.title); if (!value) return;
-    await api(`/api/${type}/${id}`, { method: 'PATCH', body: JSON.stringify(type === 'users' ? { name: value } : { [type === 'departments' ? 'name' : 'title']: value }) });
+    const endpoint = `/api/${type}${record ? `/${record.id}` : ''}`;
+    await api(endpoint, { method: record ? 'PATCH' : 'POST', body: JSON.stringify(data) });
   }
-  await loadAdminData(); showToast('Cambios guardados');
+  document.querySelector('#recordModal').classList.remove('open'); await loadAdminData(); await loadDashboard(); showToast('Cambios guardados');
 };
 const deleteAdminRecord = async (type, id) => {
   if (!window.confirm('Esta acción eliminará el registro. ¿Quieres continuar?')) return;
@@ -80,39 +78,6 @@ const renderDashboard = ({ meetings, tasks, minutes }) => {
   if (minutesPanel) minutesPanel.innerHTML = `<div class="panel-header"><div><span class="label-with-dot"><i class="dot gold"></i> DOCUMENTACIÓN</span><h3>Últimas actas</h3></div></div>${minutes.slice(0, 3).map(minute => `<div class="minutes-row"><div class="doc-icon">▤</div><div class="doc-copy"><strong>Acta · ${escapeHtml(minute.meeting_title)}</strong><small>${escapeHtml(minute.department_name)} · ${formatDate(minute.updated_at)}</small></div><span class="${minute.status === 'sent' ? 'sent-tag' : 'review-tag'}">${minute.status === 'sent' ? 'Enviada' : 'Por revisar'}</span></div>`).join('') || '<p class="muted">No hay actas creadas.</p>'}`;
 };
 const loadDashboard = async () => renderDashboard(Object.fromEntries(await Promise.all(['meetings', 'tasks', 'minutes'].map(async resource => [resource, await api(`/api/${resource}`)]))));
-const createAdminRecord = async action => {
-  try {
-    if (action === 'department') {
-      const name = window.prompt('Nombre del departamento'); if (!name) return;
-      await api('/api/departments', { method: 'POST', body: JSON.stringify({ name }) });
-    }
-    if (action === 'user') {
-      const name = window.prompt('Nombre completo del usuario'); if (!name) return;
-      const email = window.prompt('Correo del colegio'); if (!email) return;
-      await api('/api/users', { method: 'POST', body: JSON.stringify({ name, email }) });
-    }
-    if (action === 'meeting') {
-      if (!adminData.departments.length) return showToast('Crea antes un departamento');
-      const title = window.prompt('Título de la reunión', 'Reunión de departamento'); if (!title) return;
-      const departmentId = window.prompt(`Identificador del departamento:\n${adminData.departments.map(d => `${d.id}: ${d.name}`).join('\n')}`); if (!departmentId) return;
-      const startsAt = window.prompt('Fecha y hora (AAAA-MM-DD HH:MM)', new Date().toISOString().slice(0, 16).replace('T', ' ')); if (!startsAt) return;
-      await api('/api/meetings', { method: 'POST', body: JSON.stringify({ title, departmentId, startsAt: startsAt.replace(' ', 'T') }) });
-    }
-    if (action === 'minute') {
-      if (!adminData.meetings.length) return showToast('Crea antes una reunión');
-      const meetingId = window.prompt(`Identificador de reunión:\n${adminData.meetings.map(m => `${m.id}: ${m.title}`).join('\n')}`); if (!meetingId) return;
-      const content = window.prompt('Contenido inicial del acta'); if (content === null) return;
-      await api(`/api/meetings/${encodeURIComponent(meetingId)}/minutes`, { method: 'PATCH', body: JSON.stringify({ content, status: 'draft' }) });
-    }
-    if (action === 'task') {
-      if (!adminData.departments.length) return showToast('Crea antes un departamento');
-      const title = window.prompt('Título de la tarea'); if (!title) return;
-      const departmentId = window.prompt(`Identificador del departamento:\n${adminData.departments.map(d => `${d.id}: ${d.name}`).join('\n')}`); if (!departmentId) return;
-      await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, departmentId }) });
-    }
-    await loadAdminData(); showToast('Registro creado correctamente');
-  } catch { showToast('No se pudo guardar el registro'); }
-};
 const authScreen = document.querySelector('#authScreen');
 const appShell = document.querySelector('.app-shell');
 const isGithubPreview = window.location.hostname.endsWith('github.io');
@@ -125,8 +90,9 @@ fetch('/api/session').then(response => {
   const profile = document.querySelector('.profile');
   if (profile) profile.querySelector('strong').textContent = session.name || session.email;
   if (profile) profile.querySelector('small').textContent = session.isAdmin ? 'Administrador de la plataforma' : session.email;
-  const userAvatar = document.querySelector('#userAvatar');
-  if (session.picture && userAvatar) userAvatar.style.backgroundImage = `url(${session.picture})`;
+  const firstName = (session.name || session.email).split(' ')[0];
+  document.querySelector('#welcomeName').innerHTML = `Buenos días, ${escapeHtml(firstName)} <span>✦</span>`;
+  ['#userAvatar', '#profileAvatar'].forEach(selector => { const avatar = document.querySelector(selector); if (avatar) { avatar.textContent = firstName.slice(0, 2).toUpperCase(); if (session.picture) avatar.style.backgroundImage = `url(${session.picture})`; } });
   if (session.isAdmin) {
     const admin = document.querySelector('#adminNav');
     admin.hidden = false;
@@ -157,13 +123,16 @@ document.querySelectorAll('.check:not(.checked)').forEach(check => check.addEven
 document.querySelector('#mobileMenu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
 document.querySelector('#closeAdmin').addEventListener('click', () => document.querySelector('#adminModal').classList.remove('open'));
 document.querySelectorAll('.admin-tab').forEach(tab => tab.addEventListener('click', () => { adminSection = tab.dataset.adminSection; document.querySelectorAll('.admin-tab').forEach(item => item.classList.toggle('active', item === tab)); renderAdminList(); }));
-document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => createAdminRecord(button.dataset.action)));
+document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => openRecordForm(button.dataset.action === 'department' ? 'departments' : `${button.dataset.action}s`)));
 document.querySelector('#adminList').addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   try {
-    if (button.dataset.members) await manageMembers(button.dataset.members);
-    if (button.dataset.edit) await editAdminRecord(button.dataset.type, button.dataset.edit);
+    if (button.dataset.members) openRecordForm('members', adminData.departments.find(item => item.id === button.dataset.members));
+    if (button.dataset.edit) openRecordForm(button.dataset.type, adminData[button.dataset.type].find(item => item.id === button.dataset.edit));
     if (button.dataset.delete) await deleteAdminRecord(button.dataset.type, button.dataset.delete);
   } catch { showToast('No se pudo completar la acción'); }
 });
+document.querySelector('#recordForm').addEventListener('submit', event => saveRecordForm(event).catch(() => showToast('No se pudieron guardar los cambios')));
+['#closeRecord', '#cancelRecord'].forEach(selector => document.querySelector(selector).addEventListener('click', () => document.querySelector('#recordModal').classList.remove('open')));
+document.querySelector('#recordModal').addEventListener('click', event => { if (event.target.id === 'recordModal') event.currentTarget.classList.remove('open'); });
 document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => { if (item.classList.contains('dept')) { document.querySelectorAll('.dept').forEach(dept => dept.classList.remove('active-dept')); item.classList.add('active-dept'); } }));

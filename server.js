@@ -134,7 +134,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.startsWith('/api/meetings/') && !request.url.endsWith('/minutes') && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE meetings SET title = COALESCE($1, title), starts_at = COALESCE($2, starts_at), location = COALESCE($3, location), status = COALESCE($4, status), updated_at = now() WHERE id = $5 RETURNING *', [body.title || null, body.startsAt || null, body.location || null, body.status || null, id]);
+      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE meetings SET department_id = COALESCE($1, department_id), title = COALESCE($2, title), starts_at = COALESCE($3, starts_at), location = COALESCE($4, location), status = COALESCE($5, status), updated_at = now() WHERE id = $6 RETURNING *', [body.departmentId || null, body.title || null, body.startsAt || null, body.location || null, body.status || null, id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
     }
     if (request.url?.startsWith('/api/meetings/') && !request.url.endsWith('/minutes') && request.method === 'DELETE') {
@@ -157,7 +157,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.startsWith('/api/tasks/') && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE tasks SET title = COALESCE($1, title), description = COALESCE($2, description), assigned_to = COALESCE($3, assigned_to), due_date = COALESCE($4, due_date), status = COALESCE($5, status), updated_at = now() WHERE id = $6 RETURNING *', [body.title || null, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || null, id]);
+      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE tasks SET department_id = COALESCE($1, department_id), title = COALESCE($2, title), description = COALESCE($3, description), assigned_to = COALESCE($4, assigned_to), due_date = COALESCE($5, due_date), status = COALESCE($6, status), updated_at = now() WHERE id = $7 RETURNING *', [body.departmentId || null, body.title || null, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || null, id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
     }
     if (request.url?.startsWith('/api/tasks/') && request.method === 'DELETE') {
