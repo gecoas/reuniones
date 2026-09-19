@@ -75,6 +75,11 @@ const server = http.createServer(async (request, response) => {
       const result = await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id GROUP BY u.id ORDER BY u.name`);
       return json(response, 200, result.rows);
     }
+    if (request.url === '/api/users' && request.method === 'POST') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const body = await readBody(request); const result = await pool.query('INSERT INTO users (email, name, role) VALUES ($1, $2, $3) RETURNING id, email, name, role', [body.email.toLowerCase(), body.name, body.role || 'member']);
+      return json(response, 201, result.rows[0]);
+    }
     if (request.url?.startsWith('/api/users/') && request.method === 'PATCH') {
       const session = requireAdmin(request, response); if (!session) return;
       const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE users SET role = COALESCE($1, role), updated_at = now() WHERE id = $2 RETURNING id, email, name, role', [body.role || null, id]);
@@ -93,6 +98,11 @@ const server = http.createServer(async (request, response) => {
     if (request.url === '/api/meetings' && request.method === 'GET') {
       if (!requireSession(request, response)) return;
       const result = await pool.query(`SELECT m.*, d.name AS department_name, COUNT(ai.id)::int AS agenda_count FROM meetings m JOIN departments d ON d.id = m.department_id LEFT JOIN agenda_items ai ON ai.meeting_id = m.id GROUP BY m.id, d.name ORDER BY m.starts_at DESC`);
+      return json(response, 200, result.rows);
+    }
+    if (request.url === '/api/minutes' && request.method === 'GET') {
+      const session = requireSession(request, response); if (!session) return;
+      const result = await pool.query(`SELECT mi.*, m.title AS meeting_title, m.starts_at, d.name AS department_name FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id JOIN departments d ON d.id = m.department_id ORDER BY mi.updated_at DESC`);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/meetings' && request.method === 'POST') {

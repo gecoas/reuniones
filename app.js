@@ -3,13 +3,60 @@ const toast = document.querySelector('#toast');
 const showToast = (message) => { toast.textContent = message; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2400); };
 const api = (url, options) => fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options }).then(response => { if (!response.ok) throw new Error(`API ${response.status}`); return response.status === 204 ? null : response.json(); });
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
-const renderDepartmentList = departments => {
-  const list = document.querySelector('.admin-list');
-  if (!list) return;
-  list.innerHTML = `<div class="admin-list-head"><strong>Departamentos</strong><button class="add-task" id="addDepartment">＋ Añadir</button></div>` + departments.map(department => `<div class="admin-item" data-id="${escapeHtml(department.id)}"><span class="dot ${escapeHtml(department.color)}"></span><div><strong>${escapeHtml(department.name)}</strong><small>${department.member_count} miembros${department.head_name ? ` · ${escapeHtml(department.head_name)}` : ''}</small></div><button class="small-edit" title="Editar departamento">✎</button></div>`).join('');
-  document.querySelector('#addDepartment').addEventListener('click', async () => { const name = window.prompt('Nombre del departamento'); if (!name) return; try { await api('/api/departments', { method: 'POST', body: JSON.stringify({ name }) }); await loadAdminData(); showToast('Departamento creado'); } catch { showToast('No se pudo crear el departamento'); } });
+let adminSection = 'departments';
+let adminData = { departments: [], users: [], meetings: [], minutes: [], tasks: [] };
+const renderAdminList = () => {
+  const list = document.querySelector('#adminList');
+  const items = adminData[adminSection];
+  const labels = { departments: 'Departamentos', users: 'Usuarios', meetings: 'Reuniones', minutes: 'Actas', tasks: 'Tareas' };
+  const empty = `<div class="admin-item"><div><strong>No hay ${labels[adminSection].toLowerCase()} todavía</strong><small>Usa una de las acciones de abajo para crear el primer registro.</small></div></div>`;
+  const content = {
+    departments: items.map(d => `<div class="admin-item"><span class="dot ${escapeHtml(d.color)}"></span><div><strong>${escapeHtml(d.name)}</strong><small>${d.member_count} miembros${d.head_name ? ` · ${escapeHtml(d.head_name)}` : ''}</small></div></div>`),
+    users: items.map(u => `<div class="admin-item"><div class="avatar avatar-small">${escapeHtml((u.name || u.email).slice(0, 2).toUpperCase())}</div><div><strong>${escapeHtml(u.name || u.email)}</strong><small>${escapeHtml(u.email)} · ${u.role === 'admin' ? 'Administrador' : 'Miembro'}</small></div></div>`),
+    meetings: items.map(m => `<div class="admin-item"><span class="dot blue"></span><div><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(m.department_name)} · ${new Date(m.starts_at).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}</small></div></div>`),
+    minutes: items.map(m => `<div class="admin-item"><span class="doc-icon">▤</span><div><strong>Acta · ${escapeHtml(m.meeting_title)}</strong><small>${escapeHtml(m.department_name)} · ${m.status === 'sent' ? 'Enviada' : 'Borrador'}</small></div></div>`),
+    tasks: items.map(t => `<div class="admin-item"><span class="check ${t.status === 'done' ? 'checked' : ''}">${t.status === 'done' ? '✓' : ''}</span><div><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(t.assignee_name || 'Sin responsable')} · ${escapeHtml(t.status)}</small></div></div>`)
+  };
+  list.innerHTML = `<div class="admin-list-head"><strong>${labels[adminSection]}</strong><span>${items.length}</span></div>${content[adminSection].join('') || empty}`;
 };
-const loadAdminData = async () => { const departments = await api('/api/departments'); renderDepartmentList(departments); };
+const loadAdminData = async () => {
+  const [departments, users, meetings, minutes, tasks] = await Promise.all(['/api/departments', '/api/users', '/api/meetings', '/api/minutes', '/api/tasks'].map(api));
+  adminData = { departments, users, meetings, minutes, tasks };
+  renderAdminList();
+};
+const createAdminRecord = async action => {
+  try {
+    if (action === 'department') {
+      const name = window.prompt('Nombre del departamento'); if (!name) return;
+      await api('/api/departments', { method: 'POST', body: JSON.stringify({ name }) });
+    }
+    if (action === 'user') {
+      const name = window.prompt('Nombre completo del usuario'); if (!name) return;
+      const email = window.prompt('Correo del colegio'); if (!email) return;
+      await api('/api/users', { method: 'POST', body: JSON.stringify({ name, email }) });
+    }
+    if (action === 'meeting') {
+      if (!adminData.departments.length) return showToast('Crea antes un departamento');
+      const title = window.prompt('Título de la reunión', 'Reunión de departamento'); if (!title) return;
+      const departmentId = window.prompt(`Identificador del departamento:\n${adminData.departments.map(d => `${d.id}: ${d.name}`).join('\n')}`); if (!departmentId) return;
+      const startsAt = window.prompt('Fecha y hora (AAAA-MM-DD HH:MM)', new Date().toISOString().slice(0, 16).replace('T', ' ')); if (!startsAt) return;
+      await api('/api/meetings', { method: 'POST', body: JSON.stringify({ title, departmentId, startsAt: startsAt.replace(' ', 'T') }) });
+    }
+    if (action === 'minute') {
+      if (!adminData.meetings.length) return showToast('Crea antes una reunión');
+      const meetingId = window.prompt(`Identificador de reunión:\n${adminData.meetings.map(m => `${m.id}: ${m.title}`).join('\n')}`); if (!meetingId) return;
+      const content = window.prompt('Contenido inicial del acta'); if (content === null) return;
+      await api(`/api/meetings/${encodeURIComponent(meetingId)}/minutes`, { method: 'PATCH', body: JSON.stringify({ content, status: 'draft' }) });
+    }
+    if (action === 'task') {
+      if (!adminData.departments.length) return showToast('Crea antes un departamento');
+      const title = window.prompt('Título de la tarea'); if (!title) return;
+      const departmentId = window.prompt(`Identificador del departamento:\n${adminData.departments.map(d => `${d.id}: ${d.name}`).join('\n')}`); if (!departmentId) return;
+      await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, departmentId }) });
+    }
+    await loadAdminData(); showToast('Registro creado correctamente');
+  } catch { showToast('No se pudo guardar el registro'); }
+};
 const authScreen = document.querySelector('#authScreen');
 const appShell = document.querySelector('.app-shell');
 const isGithubPreview = window.location.hostname.endsWith('github.io');
@@ -24,13 +71,9 @@ fetch('/api/session').then(response => {
   if (profile) profile.querySelector('small').textContent = session.isAdmin ? 'Administrador de la plataforma' : session.email;
   if (session.picture) document.querySelector('#userAvatar').style.backgroundImage = `url(${session.picture})`;
   if (session.isAdmin) {
-    const actions = document.querySelector('.welcome-row > div:last-child');
-    const admin = document.createElement('button');
-    admin.className = 'button outline admin-trigger';
-    admin.id = 'openAdmin';
-    admin.textContent = '⚙ Administración';
-    actions?.prepend(admin);
-    admin.addEventListener('click', async () => { document.querySelector('#adminModal').classList.add('open'); try { await loadAdminData(); } catch { showToast('No se pudieron cargar los departamentos'); } });
+    const admin = document.querySelector('#adminNav');
+    admin.hidden = false;
+    admin.addEventListener('click', async () => { document.querySelector('#adminModal').classList.add('open'); try { await loadAdminData(); } catch { showToast('No se pudieron cargar los datos de administración'); } });
   }
 }).catch(() => {
   if (isGithubPreview) {
@@ -54,7 +97,6 @@ document.querySelectorAll('.filter').forEach(button => button.addEventListener('
 document.querySelectorAll('.check:not(.checked)').forEach(check => check.addEventListener('click', () => { check.classList.toggle('checked'); check.textContent = check.classList.contains('checked') ? '✓' : ''; showToast(check.classList.contains('checked') ? 'Tarea marcada como hecha' : 'Tarea reabierta'); }));
 document.querySelector('#mobileMenu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
 document.querySelector('#closeAdmin').addEventListener('click', () => document.querySelector('#adminModal').classList.remove('open'));
-document.querySelector('#saveAdmin').addEventListener('click', () => { document.querySelector('#adminModal').classList.remove('open'); showToast('Configuración guardada'); });
-document.querySelector('#addDepartment')?.addEventListener('click', () => showToast('Abre Administración para crear un departamento'));
-document.querySelectorAll('.admin-tab').forEach(tab => tab.addEventListener('click', () => { document.querySelectorAll('.admin-tab').forEach(item => item.classList.remove('active')); tab.classList.add('active'); showToast(tab.textContent.includes('Usuarios') ? 'Gestión de usuarios seleccionada' : 'Gestión de departamentos seleccionada'); }));
+document.querySelectorAll('.admin-tab').forEach(tab => tab.addEventListener('click', () => { adminSection = tab.dataset.adminSection; document.querySelectorAll('.admin-tab').forEach(item => item.classList.toggle('active', item === tab)); renderAdminList(); }));
+document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => createAdminRecord(button.dataset.action)));
 document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => { if (item.classList.contains('dept')) { document.querySelectorAll('.dept').forEach(dept => dept.classList.remove('active-dept')); item.classList.add('active-dept'); } }));
