@@ -5,13 +5,14 @@ const api = (url, options) => fetch(url, { headers: { 'Content-Type': 'applicati
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 let adminSection = 'departments';
 let adminData = { departments: [], users: [], meetings: [], minutes: [], tasks: [] };
+let currentSession = null;
 const renderAdminList = () => {
   const list = document.querySelector('#adminList');
   const items = adminData[adminSection];
   const labels = { departments: 'Departamentos', users: 'Usuarios', meetings: 'Reuniones', minutes: 'Actas', tasks: 'Tareas' };
   const columns = { departments: ['Departamento', 'Miembros'], users: ['Nombre', 'Rol'], meetings: ['Reunión', 'Fecha'], minutes: ['Acta', 'Estado'], tasks: ['Tarea', 'Estado'] };
   const details = { departments: item => [item.name, `${item.member_count} miembros`], users: item => [item.name || item.email, item.role === 'admin' ? 'Administrador' : item.role === 'manager' ? 'Gestor' : 'Profesor'], meetings: item => [item.title, formatDate(item.starts_at)], minutes: item => [item.meeting_title, item.status === 'sent' ? 'Enviada' : 'Borrador'], tasks: item => [item.title, item.status === 'done' ? 'Hecha' : item.status === 'in_progress' ? 'En curso' : 'Pendiente'] };
-  const actions = item => `<div class="table-actions">${adminSection === 'departments' ? `<button title="Gestionar miembros" aria-label="Gestionar miembros" data-members="${escapeHtml(item.id)}">Personas</button>` : ''}<button title="Editar" aria-label="Editar" data-edit="${escapeHtml(item.id)}" data-type="${adminSection}">Editar</button><button class="danger" title="Eliminar" aria-label="Eliminar" data-delete="${escapeHtml(item.id)}" data-type="${adminSection}">Eliminar</button></div>`;
+  const actions = item => currentSession?.isAdmin ? `<div class="table-actions">${adminSection === 'departments' ? `<button title="Gestionar miembros" aria-label="Gestionar miembros" data-members="${escapeHtml(item.id)}">Personas</button>` : ''}<button title="Editar" aria-label="Editar" data-edit="${escapeHtml(item.id)}" data-type="${adminSection}">Editar</button><button class="danger" title="Eliminar" aria-label="Eliminar" data-delete="${escapeHtml(item.id)}" data-type="${adminSection}">Eliminar</button></div>` : ['meetings', 'minutes', 'tasks'].includes(adminSection) ? `<div class="table-actions"><button title="Editar" aria-label="Editar" data-edit="${escapeHtml(item.id)}" data-type="${adminSection}">Editar</button></div>` : '';
   list.innerHTML = `<div class="admin-table-wrap"><table class="admin-table"><thead><tr>${columns[adminSection].map(column => `<th>${column}</th>`).join('')}<th>Acciones</th></tr></thead><tbody>${items.map(item => `<tr><td title="${escapeHtml(details[adminSection](item)[0])}">${escapeHtml(details[adminSection](item)[0])}</td><td>${escapeHtml(details[adminSection](item)[1])}</td><td>${actions(item)}</td></tr>`).join('') || `<tr><td colspan="3" class="empty-cell">No hay ${labels[adminSection].toLowerCase()} todavía.</td></tr>`}</tbody></table></div>`;
 };
 let formState = null;
@@ -90,6 +91,7 @@ fetch('/api/session').then(response => {
   if (!response.ok) throw new Error('unauthenticated');
   return response.json();
 }).then(session => {
+  currentSession = session;
   authScreen.remove();
   appShell.style.visibility = 'visible';
   const profile = document.querySelector('.profile');
@@ -105,6 +107,7 @@ fetch('/api/session').then(response => {
     admin.style.display = 'flex';
     admin.textContent = session.isAdmin ? '⚙ Administración' : '⚙ Gestión de departamentos';
     document.querySelectorAll('.admin-only').forEach(button => { button.hidden = !session.isAdmin; });
+    document.querySelector('.admin-tab[data-admin-section="users"]').hidden = !session.isAdmin;
     admin.addEventListener('click', async () => { document.querySelector('#adminModal').classList.add('open'); try { await loadAdminData(); } catch { showToast('No se pudieron cargar los datos de administración'); } });
   }
   Promise.all([loadDashboard(), loadSchool()]).catch(() => showToast('No se pudieron cargar los datos del resumen'));
