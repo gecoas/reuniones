@@ -165,8 +165,16 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.startsWith('/api/meetings/') && request.url.endsWith('/minutes') && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
-      const meetingId = request.url.split('/')[3]; const meeting = await pool.query('SELECT department_id FROM meetings WHERE id = $1', [meetingId]); if (!meeting.rows[0] || !await canManageDepartment(session, meeting.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO minutes (meeting_id, content, status, edited_by) VALUES ($1, $2, $3, $4) ON CONFLICT (meeting_id) DO UPDATE SET content = EXCLUDED.content, status = EXCLUDED.status, edited_by = EXCLUDED.edited_by, updated_at = now() RETURNING *', [meetingId, body.content || '', body.status || 'draft', user.rows[0]?.id || null]);
+      const meetingId = request.url.split('/')[3]; const meeting = await pool.query('SELECT department_id FROM meetings WHERE id = $1', [meetingId]); if (!meeting.rows[0] || !await canManageDepartment(session, meeting.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO minutes (meeting_id, content, status, attendees, summary, agreements, pending, audio_url, edited_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (meeting_id) DO UPDATE SET content = EXCLUDED.content, status = EXCLUDED.status, attendees = EXCLUDED.attendees, summary = EXCLUDED.summary, agreements = EXCLUDED.agreements, pending = EXCLUDED.pending, audio_url = EXCLUDED.audio_url, edited_by = EXCLUDED.edited_by, updated_at = now() RETURNING *', [meetingId, body.content || '', body.status || 'draft', body.attendees || '', body.summary || '', body.agreements || '', body.pending || '', body.audioUrl || null, user.rows[0]?.id || null]);
       return json(response, 200, result.rows[0]);
+    }
+    if (request.url?.match(/^\/api\/meetings\/[^/]+\/agenda$/) && request.method === 'GET') {
+      const session = requireSession(request, response); if (!session) return;
+      const meetingId = request.url.split('/')[3]; const result = await pool.query('SELECT id, title, position FROM agenda_items WHERE meeting_id = $1 ORDER BY position, created_at', [meetingId]); return json(response, 200, result.rows);
+    }
+    if (request.url?.match(/^\/api\/meetings\/[^/]+\/agenda$/) && request.method === 'POST') {
+      const session = requireSession(request, response); if (!session) return;
+      const meetingId = request.url.split('/')[3]; const meeting = await pool.query('SELECT department_id FROM meetings WHERE id = $1', [meetingId]); if (!meeting.rows[0] || !await canManageDepartment(session, meeting.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); await pool.query('DELETE FROM agenda_items WHERE meeting_id = $1', [meetingId]); const titles = Array.isArray(body.items) ? body.items : []; await Promise.all(titles.filter(Boolean).map((title, position) => pool.query('INSERT INTO agenda_items (meeting_id, title, position) VALUES ($1, $2, $3)', [meetingId, title, position]))); return json(response, 204, null);
     }
     if (request.url?.startsWith('/api/minutes/') && request.method === 'DELETE') {
       const session = requireAdmin(request, response); if (!session) return;
@@ -174,7 +182,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url === '/api/tasks' && request.method === 'POST') {
       const session = requireSession(request, response); if (!session) return;
-      const body = await readBody(request); if (!await canManageDepartment(session, body.departmentId)) return json(response, 403, { error: 'department_manager_required' }); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO tasks (department_id, title, description, assigned_to, due_date, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *', [body.departmentId, body.title, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || 'pending', user.rows[0]?.id || null]);
+      const body = await readBody(request); if (!await canManageDepartment(session, body.departmentId)) return json(response, 403, { error: 'department_manager_required' }); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO tasks (department_id, meeting_id, title, description, assigned_to, due_date, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *', [body.departmentId, body.meetingId || null, body.title, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || 'pending', user.rows[0]?.id || null]);
       return json(response, 201, result.rows[0]);
     }
     if (request.url?.startsWith('/api/tasks/') && request.method === 'PATCH') {
