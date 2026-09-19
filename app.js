@@ -102,7 +102,7 @@ fetch('/api/session').then(response => {
   const firstName = (session.name || session.email).split(' ')[0];
   document.querySelector('#todayDate').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase();
   document.querySelector('#welcomeName').innerHTML = `Buenos días, ${escapeHtml(firstName)} <span>✦</span>`;
-  ['#userAvatar', '#profileAvatar'].forEach(selector => { const avatar = document.querySelector(selector); if (avatar) { avatar.textContent = firstName.slice(0, 2).toUpperCase(); if (session.picture) avatar.style.backgroundImage = `url(${session.picture})`; } });
+  ['#profileAvatar'].forEach(selector => { const avatar = document.querySelector(selector); if (avatar) { avatar.textContent = firstName.slice(0, 2).toUpperCase(); if (session.picture) avatar.style.backgroundImage = `url(${session.picture})`; } });
   if (session.isAdmin || session.isManager) {
     const admin = document.querySelector('#adminNav');
     admin.hidden = false;
@@ -135,6 +135,7 @@ document.querySelectorAll('.filter').forEach(button => button.addEventListener('
 document.querySelectorAll('.check:not(.checked)').forEach(check => check.addEventListener('click', () => { check.classList.toggle('checked'); check.textContent = check.classList.contains('checked') ? '✓' : ''; showToast(check.classList.contains('checked') ? 'Tarea marcada como hecha' : 'Tarea reabierta'); }));
 document.querySelector('#mobileMenu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
 document.querySelector('#closeAdmin').addEventListener('click', () => document.querySelector('#adminModal').classList.remove('open'));
+document.querySelector('#openSchoolSettings').addEventListener('click', async () => { if (!schoolSettings) await loadSchool(); openRecordForm('settings', schoolSettings); });
 document.querySelectorAll('.admin-tab').forEach(tab => tab.addEventListener('click', () => { adminSection = tab.dataset.adminSection; document.querySelectorAll('.admin-tab').forEach(item => item.classList.toggle('active', item === tab)); renderAdminList(); }));
 document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => openRecordForm(button.dataset.action === 'department' ? 'departments' : button.dataset.action === 'settings' ? 'settings' : `${button.dataset.action}s`, button.dataset.action === 'settings' ? schoolSettings : null)));
 document.querySelector('#adminList').addEventListener('click', async event => {
