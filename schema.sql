@@ -34,9 +34,14 @@ CREATE TABLE IF NOT EXISTS departments (
 CREATE TABLE IF NOT EXISTS department_members (
   department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'teacher' CHECK (role IN ('teacher', 'manager')),
   joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (department_id, user_id)
 );
+
+ALTER TABLE department_members ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'teacher';
+ALTER TABLE department_members DROP CONSTRAINT IF EXISTS department_members_role_check;
+ALTER TABLE department_members ADD CONSTRAINT department_members_role_check CHECK (role IN ('teacher', 'manager'));
 
 CREATE TABLE IF NOT EXISTS meetings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -30,12 +30,11 @@ const requireSession = (request, response) => { const session = getRequestSessio
 const requireAdmin = (request, response) => { const session = requireSession(request, response); if (session && !session.isAdmin) { json(response, 403, { error: 'admin_required' }); return null; } return session; };
 const accessibleDepartmentIds = async session => {
   if (session.isAdmin) return null;
-  const user = await pool.query('SELECT id, role FROM users WHERE email = $1', [session.email]);
+  const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]);
   if (!user.rows[0]) return [];
-  if (user.rows[0].role === 'manager') return (await pool.query('SELECT id FROM departments WHERE head_user_id = $1', [user.rows[0].id])).rows.map(row => row.id);
   return (await pool.query('SELECT department_id AS id FROM department_members WHERE user_id = $1', [user.rows[0].id])).rows.map(row => row.id);
 };
-const canManageDepartment = async (session, departmentId) => session.isAdmin || (await pool.query('SELECT 1 FROM departments d JOIN users u ON u.id = d.head_user_id WHERE d.id = $1 AND u.email = $2 AND u.role = $3', [departmentId, session.email, 'manager'])).rowCount > 0;
+const canManageDepartment = async (session, departmentId) => session.isAdmin || (await pool.query('SELECT 1 FROM department_members dm JOIN users u ON u.id = dm.user_id WHERE dm.department_id = $1 AND u.email = $2 AND dm.role = $3', [departmentId, session.email, 'manager'])).rowCount > 0;
 
 async function callback(request, response) {
   const query = new URL(request.url, appUrl).searchParams;
@@ -50,7 +49,8 @@ async function callback(request, response) {
   const email = String(profile.email || '').toLowerCase();
   if (!email.endsWith('@alcaste-lasfuentes.com')) return redirect(response, '/?error=domain_not_allowed');
   const userResult = await pool.query(`INSERT INTO users (email, name, picture, role) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, picture = EXCLUDED.picture, role = CASE WHEN EXCLUDED.role = 'admin' THEN 'admin' ELSE users.role END, updated_at = now() RETURNING id, role`, [email, profile.name || email, profile.picture || null, email === adminEmail ? 'admin' : 'member']);
-  const session = { email, name: profile.name, picture: profile.picture, role: userResult.rows[0].role, isAdmin: userResult.rows[0].role === 'admin', expires: Date.now() + 8 * 60 * 60 * 1000 };
+  const managerResult = await pool.query(`SELECT EXISTS (SELECT 1 FROM department_members dm JOIN users u ON u.id = dm.user_id WHERE u.email = $1 AND dm.role = 'manager') AS is_manager`, [email]);
+  const session = { email, name: profile.name, picture: profile.picture, isAdmin: userResult.rows[0].role === 'admin', isManager: managerResult.rows[0].is_manager, expires: Date.now() + 8 * 60 * 60 * 1000 };
   redirect(response, '/', { 'Set-Cookie': cookie(signSession(session), 8 * 60 * 60) });
 }
 
@@ -89,7 +89,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url === '/api/users' && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
-      const ids = await accessibleDepartmentIds(session); if (!session.isAdmin && !ids.length) return json(response, 200, []); const result = session.isAdmin ? await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id GROUP BY u.id ORDER BY u.name`) : await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u JOIN department_members visible_dm ON visible_dm.user_id = u.id LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id WHERE visible_dm.department_id = ANY($1::uuid[]) GROUP BY u.id ORDER BY u.name`, [ids]);
+      const ids = await accessibleDepartmentIds(session); if (!session.isAdmin && !ids.length) return json(response, 200, []); const result = session.isAdmin ? await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name, 'role', dm.role)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id GROUP BY u.id ORDER BY u.name`) : await pool.query(`SELECT u.id, u.email, u.name, u.picture, u.role, COALESCE(json_agg(json_build_object('id', d.id, 'name', d.name, 'role', dm.role)) FILTER (WHERE d.id IS NOT NULL), '[]') AS departments FROM users u JOIN department_members visible_dm ON visible_dm.user_id = u.id LEFT JOIN department_members dm ON dm.user_id = u.id LEFT JOIN departments d ON d.id = dm.department_id WHERE visible_dm.department_id = ANY($1::uuid[]) GROUP BY u.id ORDER BY u.name`, [ids]);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/users' && request.method === 'POST') {
@@ -111,7 +111,7 @@ const server = http.createServer(async (request, response) => {
     if (request.url?.match(/^\/api\/departments\/[^/]+\/members$/) && request.method === 'POST') {
       const session = requireAdmin(request, response); if (!session) return;
       const id = request.url.split('/')[3]; const body = await readBody(request);
-      await pool.query('INSERT INTO department_members (department_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, body.userId]);
+      await pool.query('INSERT INTO department_members (department_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT (department_id, user_id) DO UPDATE SET role = EXCLUDED.role', [id, body.userId, body.role || 'teacher']);
       return json(response, 204, null);
     }
     if (request.url?.match(/^\/api\/departments\/[^/]+\/members\/[^/]+$/) && request.method === 'DELETE') {

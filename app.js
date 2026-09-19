@@ -6,6 +6,7 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character =>
 let adminSection = 'departments';
 let adminData = { departments: [], users: [], meetings: [], minutes: [], tasks: [] };
 let currentSession = null;
+let schoolSettings = null;
 const renderAdminList = () => {
   const list = document.querySelector('#adminList');
   const items = adminData[adminSection];
@@ -23,15 +24,15 @@ const openRecordForm = (type, record = null) => {
   const titles = { departments: 'Departamento', users: 'Usuario', meetings: 'Reunión', minutes: 'Acta', tasks: 'Tarea', members: 'Miembros del departamento', settings: 'Configuración del centro' };
   document.querySelector('#recordTitle').textContent = `${record ? 'Editar' : 'Crear'} ${titles[type]}`;
   const value = key => escapeHtml(record?.[key] || '');
-  if (type === 'departments') fields.innerHTML = `<label>Nombre<input name="name" required value="${value('name')}"></label><label>Gestor del departamento<select name="headUserId"><option value="">Sin asignar</option>${options(adminData.users.filter(user => user.role === 'manager'), record?.head_user_id, user => user.name || user.email)}</select></label><label>Color<select name="color"><option value="coral" ${record?.color === 'coral' ? 'selected' : ''}>Coral</option><option value="blue" ${record?.color === 'blue' ? 'selected' : ''}>Azul</option><option value="gold" ${record?.color === 'gold' ? 'selected' : ''}>Oro</option></select></label>`;
-  if (type === 'users') fields.innerHTML = `<label>Nombre completo<input name="name" required value="${value('name')}"></label><label>Correo electrónico<input name="email" type="email" required ${record ? 'readonly' : ''} value="${value('email')}"></label><label>Permiso<select name="role"><option value="member" ${record?.role === 'member' ? 'selected' : ''}>Profesor</option><option value="manager" ${record?.role === 'manager' ? 'selected' : ''}>Gestor</option><option value="admin" ${record?.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>`;
+  if (type === 'departments') fields.innerHTML = `<label>Nombre<input name="name" required value="${value('name')}"></label><label>Color<select name="color"><option value="coral" ${record?.color === 'coral' ? 'selected' : ''}>Coral</option><option value="blue" ${record?.color === 'blue' ? 'selected' : ''}>Azul</option><option value="gold" ${record?.color === 'gold' ? 'selected' : ''}>Oro</option></select></label>`;
+  if (type === 'users') fields.innerHTML = `<label>Nombre completo<input name="name" required value="${value('name')}"></label><label>Correo electrónico<input name="email" type="email" required ${record ? 'readonly' : ''} value="${value('email')}"></label><label>Permiso global<select name="role"><option value="member" ${record?.role === 'member' ? 'selected' : ''}>Profesor</option><option value="admin" ${record?.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>`;
   if (type === 'settings') fields.innerHTML = `<label>Nombre del centro<input name="name" required value="${value('name')}"></label><label>URL del logotipo<input name="logoUrl" type="url" value="${value('logo_url')}"></label><p class="form-help">Puedes usar una URL pública de imagen para el logotipo.</p>`;
   if (type === 'meetings') fields.innerHTML = `<label>Título<input name="title" required value="${value('title')}"></label><label>Departamento<select name="departmentId" required>${options(adminData.departments, record?.department_id, item => item.name)}</select></label><div class="form-row"><label>Fecha y hora<input name="startsAt" type="datetime-local" required value="${record?.starts_at ? new Date(record.starts_at).toISOString().slice(0, 16) : ''}"></label><label>Lugar<input name="location" value="${value('location')}"></label></div>`;
   if (type === 'minutes') fields.innerHTML = `${record ? '' : `<label>Reunión<select name="meetingId" required>${options(adminData.meetings, '', item => item.title)}</select></label>`}<label>Contenido<textarea name="content" required>${value('content')}</textarea></label><label>Estado<select name="status"><option value="draft" ${record?.status === 'draft' ? 'selected' : ''}>Borrador</option><option value="review" ${record?.status === 'review' ? 'selected' : ''}>En revisión</option><option value="sent" ${record?.status === 'sent' ? 'selected' : ''}>Enviada</option></select></label>`;
   if (type === 'tasks') fields.innerHTML = `<label>Título<input name="title" required value="${value('title')}"></label><label>Departamento<select name="departmentId" required>${options(adminData.departments, record?.department_id, item => item.name)}</select></label><label>Responsable<select name="assignedTo"><option value="">Sin asignar</option>${options(adminData.users, record?.assigned_to, item => item.name || item.email)}</select></label><div class="form-row"><label>Fecha límite<input name="dueDate" type="date" value="${value('due_date')}"></label><label>Estado<select name="status"><option value="pending" ${record?.status === 'pending' ? 'selected' : ''}>Pendiente</option><option value="in_progress" ${record?.status === 'in_progress' ? 'selected' : ''}>En curso</option><option value="done" ${record?.status === 'done' ? 'selected' : ''}>Hecha</option></select></label></div>`;
   if (type === 'members') {
-    const assigned = user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).some(department => department.id === record.id);
-    fields.innerHTML = `<p class="form-help">Selecciona los usuarios que pertenecen a <strong>${escapeHtml(record.name)}</strong>.</p><div class="member-checks">${adminData.users.map(user => `<label><input type="checkbox" name="member" value="${escapeHtml(user.id)}" ${assigned(user) ? 'checked' : ''}><span>${escapeHtml(user.name || user.email)}</span><small>${escapeHtml(user.email)}</small></label>`).join('') || '<p>No hay usuarios creados.</p>'}</div>`;
+    const membership = user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).find(department => department.id === record.id);
+    fields.innerHTML = `<p class="form-help">Selecciona a los miembros y asigna su permiso en este departamento.</p><div class="member-checks">${adminData.users.map(user => { const member = membership(user); return `<label><input type="checkbox" name="member" value="${escapeHtml(user.id)}" ${member ? 'checked' : ''}><span>${escapeHtml(user.name || user.email)}</span><small>${escapeHtml(user.email)}</small><select name="memberRole-${escapeHtml(user.id)}"><option value="teacher" ${member?.role !== 'manager' ? 'selected' : ''}>Profesor</option><option value="manager" ${member?.role === 'manager' ? 'selected' : ''}>Gestor</option></select></label>`; }).join('') || '<p>No hay usuarios creados.</p>'}</div>`;
   }
   document.querySelector('#recordModal').classList.add('open');
 };
@@ -42,7 +43,7 @@ const saveRecordForm = async event => {
   if (type === 'members') {
     const selected = new Set(new FormData(event.currentTarget).getAll('member'));
     const current = adminData.users.filter(user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).some(department => department.id === record.id));
-    await Promise.all(adminData.users.filter(user => selected.has(user.id) && !current.some(member => member.id === user.id)).map(user => api(`/api/departments/${record.id}/members`, { method: 'POST', body: JSON.stringify({ userId: user.id }) })));
+    await Promise.all(adminData.users.filter(user => selected.has(user.id)).map(user => api(`/api/departments/${record.id}/members`, { method: 'POST', body: JSON.stringify({ userId: user.id, role: new FormData(event.currentTarget).get(`memberRole-${user.id}`) }) })));
     await Promise.all(current.filter(user => !selected.has(user.id)).map(user => api(`/api/departments/${record.id}/members/${user.id}`, { method: 'DELETE' })));
   } else if (type === 'settings') {
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify(data) });
@@ -86,7 +87,7 @@ const loadDashboard = async () => renderDashboard(Object.fromEntries(await Promi
 const authScreen = document.querySelector('#authScreen');
 const appShell = document.querySelector('.app-shell');
 const isGithubPreview = window.location.hostname.endsWith('github.io');
-const loadSchool = async () => { const settings = await api('/api/settings'); document.querySelector('#schoolName').textContent = settings.name; if (settings.logo_url) { const logo = document.querySelector('#schoolLogo'); logo.style.backgroundImage = `url(${settings.logo_url})`; logo.textContent = ''; } };
+const loadSchool = async () => { const settings = await api('/api/settings'); schoolSettings = settings; document.querySelector('#schoolName').textContent = settings.name; if (settings.logo_url) { const logo = document.querySelector('#schoolLogo'); logo.style.backgroundImage = `url(${settings.logo_url})`; logo.textContent = ''; } };
 fetch('/api/session').then(response => {
   if (!response.ok) throw new Error('unauthenticated');
   return response.json();
@@ -101,7 +102,7 @@ fetch('/api/session').then(response => {
   document.querySelector('#todayDate').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase();
   document.querySelector('#welcomeName').innerHTML = `Buenos días, ${escapeHtml(firstName)} <span>✦</span>`;
   ['#userAvatar', '#profileAvatar'].forEach(selector => { const avatar = document.querySelector(selector); if (avatar) { avatar.textContent = firstName.slice(0, 2).toUpperCase(); if (session.picture) avatar.style.backgroundImage = `url(${session.picture})`; } });
-  if (session.isAdmin || session.role === 'manager') {
+  if (session.isAdmin || session.isManager) {
     const admin = document.querySelector('#adminNav');
     admin.hidden = false;
     admin.style.display = 'flex';
@@ -134,7 +135,7 @@ document.querySelectorAll('.check:not(.checked)').forEach(check => check.addEven
 document.querySelector('#mobileMenu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
 document.querySelector('#closeAdmin').addEventListener('click', () => document.querySelector('#adminModal').classList.remove('open'));
 document.querySelectorAll('.admin-tab').forEach(tab => tab.addEventListener('click', () => { adminSection = tab.dataset.adminSection; document.querySelectorAll('.admin-tab').forEach(item => item.classList.toggle('active', item === tab)); renderAdminList(); }));
-document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => openRecordForm(button.dataset.action === 'department' ? 'departments' : button.dataset.action === 'settings' ? 'settings' : `${button.dataset.action}s`)));
+document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => openRecordForm(button.dataset.action === 'department' ? 'departments' : button.dataset.action === 'settings' ? 'settings' : `${button.dataset.action}s`, button.dataset.action === 'settings' ? schoolSettings : null)));
 document.querySelector('#adminList').addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   try {
