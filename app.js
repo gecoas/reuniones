@@ -1,6 +1,15 @@
 const modal = document.querySelector('#modal');
 const toast = document.querySelector('#toast');
 const showToast = (message) => { toast.textContent = message; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2400); };
+const api = (url, options) => fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options }).then(response => { if (!response.ok) throw new Error(`API ${response.status}`); return response.status === 204 ? null : response.json(); });
+const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+const renderDepartmentList = departments => {
+  const list = document.querySelector('.admin-list');
+  if (!list) return;
+  list.innerHTML = `<div class="admin-list-head"><strong>Departamentos</strong><button class="add-task" id="addDepartment">＋ Añadir</button></div>` + departments.map(department => `<div class="admin-item" data-id="${escapeHtml(department.id)}"><span class="dot ${escapeHtml(department.color)}"></span><div><strong>${escapeHtml(department.name)}</strong><small>${department.member_count} miembros${department.head_name ? ` · ${escapeHtml(department.head_name)}` : ''}</small></div><button class="small-edit" title="Editar departamento">✎</button></div>`).join('');
+  document.querySelector('#addDepartment').addEventListener('click', async () => { const name = window.prompt('Nombre del departamento'); if (!name) return; try { await api('/api/departments', { method: 'POST', body: JSON.stringify({ name }) }); await loadAdminData(); showToast('Departamento creado'); } catch { showToast('No se pudo crear el departamento'); } });
+};
+const loadAdminData = async () => { const departments = await api('/api/departments'); renderDepartmentList(departments); };
 const authScreen = document.querySelector('#authScreen');
 const appShell = document.querySelector('.app-shell');
 const isGithubPreview = window.location.hostname.endsWith('github.io');
@@ -21,7 +30,7 @@ fetch('/api/session').then(response => {
     admin.id = 'openAdmin';
     admin.textContent = '⚙ Administración';
     actions?.prepend(admin);
-    admin.addEventListener('click', () => document.querySelector('#adminModal').classList.add('open'));
+    admin.addEventListener('click', async () => { document.querySelector('#adminModal').classList.add('open'); try { await loadAdminData(); } catch { showToast('No se pudieron cargar los departamentos'); } });
   }
 }).catch(() => {
   if (isGithubPreview) {
@@ -46,6 +55,6 @@ document.querySelectorAll('.check:not(.checked)').forEach(check => check.addEven
 document.querySelector('#mobileMenu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
 document.querySelector('#closeAdmin').addEventListener('click', () => document.querySelector('#adminModal').classList.remove('open'));
 document.querySelector('#saveAdmin').addEventListener('click', () => { document.querySelector('#adminModal').classList.remove('open'); showToast('Configuración guardada'); });
-document.querySelector('#addDepartment').addEventListener('click', () => showToast('Nuevo departamento listo para configurar'));
+document.querySelector('#addDepartment')?.addEventListener('click', () => showToast('Abre Administración para crear un departamento'));
 document.querySelectorAll('.admin-tab').forEach(tab => tab.addEventListener('click', () => { document.querySelectorAll('.admin-tab').forEach(item => item.classList.remove('active')); tab.classList.add('active'); showToast(tab.textContent.includes('Usuarios') ? 'Gestión de usuarios seleccionada' : 'Gestión de departamentos seleccionada'); }));
 document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => { if (item.classList.contains('dept')) { document.querySelectorAll('.dept').forEach(dept => dept.classList.remove('active-dept')); item.classList.add('active-dept'); } }));
