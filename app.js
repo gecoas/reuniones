@@ -88,6 +88,7 @@ const authScreen = document.querySelector('#authScreen');
 const appShell = document.querySelector('.app-shell');
 const isGithubPreview = window.location.hostname.endsWith('github.io');
 const loadSchool = async () => { const settings = await api('/api/settings'); schoolSettings = settings; document.querySelector('#schoolName').textContent = settings.name; if (settings.logo_url) { const logo = document.querySelector('#schoolLogo'); logo.style.backgroundImage = `url(${settings.logo_url})`; logo.textContent = ''; } };
+const loadMyDepartments = async () => { const departments = await api('/api/my-departments'); const container = document.querySelector('#myDepartments'); container.innerHTML = departments.map((department, index) => `<button class="nav-item dept ${index === 0 ? 'active-dept' : ''}"><i class="dot ${escapeHtml(department.color)}"></i>${escapeHtml(department.name)}${department.role === 'manager' ? '<em>Gestor</em>' : ''}</button>`).join('') || '<p class="nav-empty">No perteneces a ningún departamento.</p>'; };
 fetch('/api/session').then(response => {
   if (!response.ok) throw new Error('unauthenticated');
   return response.json();
@@ -111,7 +112,7 @@ fetch('/api/session').then(response => {
     document.querySelector('.admin-tab[data-admin-section="users"]').hidden = !session.isAdmin;
     admin.addEventListener('click', async () => { document.querySelector('#adminModal').classList.add('open'); try { await loadAdminData(); } catch { showToast('No se pudieron cargar los datos de administración'); } });
   }
-  Promise.all([loadDashboard(), loadSchool()]).catch(() => showToast('No se pudieron cargar los datos del resumen'));
+  Promise.all([loadDashboard(), loadSchool(), loadMyDepartments()]).catch(() => showToast('No se pudieron cargar los datos del resumen'));
 }).catch(() => {
   if (isGithubPreview) {
     authScreen.remove();

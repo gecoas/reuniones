@@ -82,6 +82,11 @@ const server = http.createServer(async (request, response) => {
       const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT d.id, d.name, d.color, d.head_user_id, u.name AS head_name, COUNT(dm.user_id)::int AS member_count FROM departments d LEFT JOIN users u ON u.id = d.head_user_id LEFT JOIN department_members dm ON dm.department_id = d.id ${ids ? 'WHERE d.id = ANY($1::uuid[])' : ''} GROUP BY d.id, u.name ORDER BY d.name`, ids ? [ids] : []);
       return json(response, 200, result.rows);
     }
+    if (request.url === '/api/my-departments' && request.method === 'GET') {
+      const session = requireSession(request, response); if (!session) return;
+      const result = await pool.query(`SELECT d.id, d.name, d.color, dm.role FROM department_members dm JOIN users u ON u.id = dm.user_id JOIN departments d ON d.id = dm.department_id WHERE u.email = $1 ORDER BY d.name`, [session.email]);
+      return json(response, 200, result.rows);
+    }
     if (request.url === '/api/departments' && request.method === 'POST') {
       const session = requireAdmin(request, response); if (!session) return;
       const body = await readBody(request); const result = await pool.query('INSERT INTO departments (name, color, head_user_id) VALUES ($1, $2, NULLIF($3, \'\')::uuid) RETURNING *', [body.name, body.color || 'coral', body.headUserId || '']);
