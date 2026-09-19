@@ -10,14 +10,52 @@ const renderAdminList = () => {
   const items = adminData[adminSection];
   const labels = { departments: 'Departamentos', users: 'Usuarios', meetings: 'Reuniones', minutes: 'Actas', tasks: 'Tareas' };
   const empty = `<div class="admin-item"><div><strong>No hay ${labels[adminSection].toLowerCase()} todavía</strong><small>Usa una de las acciones de abajo para crear el primer registro.</small></div></div>`;
+  const controls = (id, type, members = false) => `<div class="admin-item-actions">${members ? `<button data-members="${escapeHtml(id)}">Miembros</button>` : ''}<button data-edit="${escapeHtml(id)}" data-type="${type}">Editar</button><button class="danger" data-delete="${escapeHtml(id)}" data-type="${type}">Eliminar</button></div>`;
   const content = {
-    departments: items.map(d => `<div class="admin-item"><span class="dot ${escapeHtml(d.color)}"></span><div><strong>${escapeHtml(d.name)}</strong><small>${d.member_count} miembros${d.head_name ? ` · ${escapeHtml(d.head_name)}` : ''}</small></div></div>`),
-    users: items.map(u => `<div class="admin-item"><div class="avatar avatar-small">${escapeHtml((u.name || u.email).slice(0, 2).toUpperCase())}</div><div><strong>${escapeHtml(u.name || u.email)}</strong><small>${escapeHtml(u.email)} · ${u.role === 'admin' ? 'Administrador' : 'Miembro'}</small></div></div>`),
-    meetings: items.map(m => `<div class="admin-item"><span class="dot blue"></span><div><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(m.department_name)} · ${new Date(m.starts_at).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}</small></div></div>`),
-    minutes: items.map(m => `<div class="admin-item"><span class="doc-icon">▤</span><div><strong>Acta · ${escapeHtml(m.meeting_title)}</strong><small>${escapeHtml(m.department_name)} · ${m.status === 'sent' ? 'Enviada' : 'Borrador'}</small></div></div>`),
-    tasks: items.map(t => `<div class="admin-item"><span class="check ${t.status === 'done' ? 'checked' : ''}">${t.status === 'done' ? '✓' : ''}</span><div><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(t.assignee_name || 'Sin responsable')} · ${escapeHtml(t.status)}</small></div></div>`)
+    departments: items.map(d => `<div class="admin-item"><span class="dot ${escapeHtml(d.color)}"></span><div><strong>${escapeHtml(d.name)}</strong><small>${d.member_count} miembros${d.head_name ? ` · ${escapeHtml(d.head_name)}` : ''}</small></div>${controls(d.id, 'departments', true)}</div>`),
+    users: items.map(u => `<div class="admin-item"><div class="avatar avatar-small">${escapeHtml((u.name || u.email).slice(0, 2).toUpperCase())}</div><div><strong>${escapeHtml(u.name || u.email)}</strong><small>${escapeHtml(u.email)} · ${u.role === 'admin' ? 'Administrador' : 'Miembro'}</small></div>${controls(u.id, 'users')}</div>`),
+    meetings: items.map(m => `<div class="admin-item"><span class="dot blue"></span><div><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(m.department_name)} · ${new Date(m.starts_at).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}</small></div>${controls(m.id, 'meetings')}</div>`),
+    minutes: items.map(m => `<div class="admin-item"><span class="doc-icon">▤</span><div><strong>Acta · ${escapeHtml(m.meeting_title)}</strong><small>${escapeHtml(m.department_name)} · ${m.status === 'sent' ? 'Enviada' : 'Borrador'}</small></div>${controls(m.id, 'minutes')}</div>`),
+    tasks: items.map(t => `<div class="admin-item"><span class="check ${t.status === 'done' ? 'checked' : ''}">${t.status === 'done' ? '✓' : ''}</span><div><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(t.assignee_name || 'Sin responsable')} · ${escapeHtml(t.status)}</small></div>${controls(t.id, 'tasks')}</div>`)
   };
   list.innerHTML = `<div class="admin-list-head"><strong>${labels[adminSection]}</strong><span>${items.length}</span></div>${content[adminSection].join('') || empty}`;
+};
+const manageMembers = async departmentId => {
+  const department = adminData.departments.find(item => item.id === departmentId);
+  const inDepartment = user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).some(item => item.id === departmentId);
+  const members = adminData.users.filter(inDepartment);
+  const action = window.prompt(`Miembros de ${department.name}:\n${members.map((user, index) => `${index + 1}. ${user.name}`).join('\n') || 'Ninguno'}\n\nEscribe A para añadir o Q para quitar.`);
+  if (!action) return;
+  if (action.toUpperCase() === 'A') {
+    const candidates = adminData.users.filter(user => !inDepartment(user));
+    const selected = window.prompt(`Usuario que añadir:\n${candidates.map((user, index) => `${index + 1}. ${user.name} (${user.email})`).join('\n')}`);
+    const user = candidates[Number(selected) - 1]; if (!user) return;
+    await api(`/api/departments/${departmentId}/members`, { method: 'POST', body: JSON.stringify({ userId: user.id }) });
+  }
+  if (action.toUpperCase() === 'Q') {
+    const selected = window.prompt(`Usuario que quitar:\n${members.map((user, index) => `${index + 1}. ${user.name}`).join('\n')}`);
+    const user = members[Number(selected) - 1]; if (!user) return;
+    await api(`/api/departments/${departmentId}/members/${user.id}`, { method: 'DELETE' });
+  }
+  await loadAdminData();
+};
+const editAdminRecord = async (type, id) => {
+  const record = adminData[type].find(item => item.id === id);
+  if (!record) return;
+  if (type === 'minutes') {
+    const content = window.prompt('Contenido del acta', record.content); if (content === null) return;
+    await api(`/api/meetings/${record.meeting_id}/minutes`, { method: 'PATCH', body: JSON.stringify({ content, status: record.status }) });
+  } else {
+    const label = type === 'users' ? 'Nombre del usuario' : type === 'tasks' ? 'Título de la tarea' : type === 'meetings' ? 'Título de la reunión' : 'Nombre del departamento';
+    const value = window.prompt(label, record.name || record.title); if (!value) return;
+    await api(`/api/${type}/${id}`, { method: 'PATCH', body: JSON.stringify(type === 'users' ? { name: value } : { [type === 'departments' ? 'name' : 'title']: value }) });
+  }
+  await loadAdminData(); showToast('Cambios guardados');
+};
+const deleteAdminRecord = async (type, id) => {
+  if (!window.confirm('Esta acción eliminará el registro. ¿Quieres continuar?')) return;
+  await api(`/api/${type}/${id}`, { method: 'DELETE' });
+  await loadAdminData(); showToast('Registro eliminado');
 };
 const loadAdminData = async () => {
   const [departments, users, meetings, minutes, tasks] = await Promise.all(['/api/departments', '/api/users', '/api/meetings', '/api/minutes', '/api/tasks'].map(api));
@@ -120,4 +158,12 @@ document.querySelector('#mobileMenu').addEventListener('click', () => document.q
 document.querySelector('#closeAdmin').addEventListener('click', () => document.querySelector('#adminModal').classList.remove('open'));
 document.querySelectorAll('.admin-tab').forEach(tab => tab.addEventListener('click', () => { adminSection = tab.dataset.adminSection; document.querySelectorAll('.admin-tab').forEach(item => item.classList.toggle('active', item === tab)); renderAdminList(); }));
 document.querySelectorAll('.admin-action').forEach(button => button.addEventListener('click', () => createAdminRecord(button.dataset.action)));
+document.querySelector('#adminList').addEventListener('click', async event => {
+  const button = event.target.closest('button'); if (!button) return;
+  try {
+    if (button.dataset.members) await manageMembers(button.dataset.members);
+    if (button.dataset.edit) await editAdminRecord(button.dataset.type, button.dataset.edit);
+    if (button.dataset.delete) await deleteAdminRecord(button.dataset.type, button.dataset.delete);
+  } catch { showToast('No se pudo completar la acción'); }
+});
 document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => { if (item.classList.contains('dept')) { document.querySelectorAll('.dept').forEach(dept => dept.classList.remove('active-dept')); item.classList.add('active-dept'); } }));

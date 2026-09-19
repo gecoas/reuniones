@@ -82,13 +82,35 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.startsWith('/api/users/') && request.method === 'PATCH') {
       const session = requireAdmin(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE users SET role = COALESCE($1, role), updated_at = now() WHERE id = $2 RETURNING id, email, name, role', [body.role || null, id]);
+      const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE users SET name = COALESCE($1, name), role = COALESCE($2, role), updated_at = now() WHERE id = $3 RETURNING id, email, name, role', [body.name || null, body.role || null, id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
+    }
+    if (request.url?.startsWith('/api/users/') && request.method === 'DELETE') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const user = await pool.query('SELECT email FROM users WHERE id = $1', [id]);
+      if (user.rows[0]?.email === session.email) return json(response, 400, { error: 'cannot_delete_current_user' });
+      await pool.query('DELETE FROM users WHERE id = $1', [id]); return json(response, 204, null);
+    }
+    if (request.url?.match(/^\/api\/departments\/[^/]+\/members$/) && request.method === 'POST') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const body = await readBody(request);
+      await pool.query('INSERT INTO department_members (department_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, body.userId]);
+      return json(response, 204, null);
+    }
+    if (request.url?.match(/^\/api\/departments\/[^/]+\/members\/[^/]+$/) && request.method === 'DELETE') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const [, , , departmentId, , userId] = request.url.split('/');
+      await pool.query('DELETE FROM department_members WHERE department_id = $1 AND user_id = $2', [departmentId, userId]);
+      return json(response, 204, null);
     }
     if (request.url?.startsWith('/api/departments/') && request.method === 'PATCH') {
       const session = requireAdmin(request, response); if (!session) return;
       const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE departments SET name = COALESCE($1, name), color = COALESCE($2, color), updated_at = now() WHERE id = $3 RETURNING *', [body.name || null, body.color || null, id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
+    }
+    if (request.url?.startsWith('/api/departments/') && request.method === 'DELETE') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; await pool.query('DELETE FROM departments WHERE id = $1', [id]); return json(response, 204, null);
     }
     if (request.url === '/api/tasks' && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
@@ -115,10 +137,18 @@ const server = http.createServer(async (request, response) => {
       const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE meetings SET title = COALESCE($1, title), starts_at = COALESCE($2, starts_at), location = COALESCE($3, location), status = COALESCE($4, status), updated_at = now() WHERE id = $5 RETURNING *', [body.title || null, body.startsAt || null, body.location || null, body.status || null, id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
     }
+    if (request.url?.startsWith('/api/meetings/') && !request.url.endsWith('/minutes') && request.method === 'DELETE') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; await pool.query('DELETE FROM meetings WHERE id = $1', [id]); return json(response, 204, null);
+    }
     if (request.url?.startsWith('/api/meetings/') && request.url.endsWith('/minutes') && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
       const meetingId = request.url.split('/')[3]; const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO minutes (meeting_id, content, status, edited_by) VALUES ($1, $2, $3, $4) ON CONFLICT (meeting_id) DO UPDATE SET content = EXCLUDED.content, status = EXCLUDED.status, edited_by = EXCLUDED.edited_by, updated_at = now() RETURNING *', [meetingId, body.content || '', body.status || 'draft', user.rows[0]?.id || null]);
       return json(response, 200, result.rows[0]);
+    }
+    if (request.url?.startsWith('/api/minutes/') && request.method === 'DELETE') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; await pool.query('DELETE FROM minutes WHERE id = $1', [id]); return json(response, 204, null);
     }
     if (request.url === '/api/tasks' && request.method === 'POST') {
       const session = requireAdmin(request, response); if (!session) return;
@@ -129,6 +159,10 @@ const server = http.createServer(async (request, response) => {
       const session = requireSession(request, response); if (!session) return;
       const id = request.url.split('/')[3]; const body = await readBody(request); const result = await pool.query('UPDATE tasks SET title = COALESCE($1, title), description = COALESCE($2, description), assigned_to = COALESCE($3, assigned_to), due_date = COALESCE($4, due_date), status = COALESCE($5, status), updated_at = now() WHERE id = $6 RETURNING *', [body.title || null, body.description || null, body.assignedTo || null, body.dueDate || null, body.status || null, id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
+    }
+    if (request.url?.startsWith('/api/tasks/') && request.method === 'DELETE') {
+      const session = requireAdmin(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; await pool.query('DELETE FROM tasks WHERE id = $1', [id]); return json(response, 204, null);
     }
     const requested = new URL(request.url, appUrl).pathname;
     const file = requested === '/' ? 'index.html' : requested.slice(1);
