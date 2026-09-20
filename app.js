@@ -13,6 +13,7 @@ let reminderDepartmentId = null;
 let dashboardMinutes = [];
 let dashboardTasks = [];
 let activeTaskFilter = 'all';
+let removedMinuteTaskIds = new Set();
 const renderAdminList = () => {
   const list = document.querySelector('#adminList');
   const items = adminData[adminSection];
@@ -25,7 +26,7 @@ const renderAdminList = () => {
 let formState = null;
 const options = (items, value, label) => items.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === value ? 'selected' : ''}>${escapeHtml(label(item))}</option>`).join('');
 const departmentMembership = (user, departmentId) => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).find(department => department.id === departmentId);
-const addMinuteTaskRow = () => { const list = document.querySelector('#minuteTasks'); if (!list) return; minuteTaskCount += 1; list.insertAdjacentHTML('beforeend', `<div class="minute-task-row"><label>Qué<input name="actaTaskTitle" placeholder="Tarea"></label><label>Quién<select name="actaTaskAssigned"><option value="">Sin asignar</option>${options(adminData.users, '', user => user.name || user.email)}</select></label><label>Para cuándo<input name="actaTaskDue" type="date"></label><button type="button" class="remove-minute-task" aria-label="Quitar tarea">×</button></div>`); };
+const addMinuteTaskRow = (task = {}) => { const list = document.querySelector('#minuteTasks'); if (!list) return; minuteTaskCount += 1; list.insertAdjacentHTML('beforeend', `<div class="minute-task-row" data-task-id="${escapeHtml(task.id || '')}"><input type="hidden" name="actaTaskId" value="${escapeHtml(task.id || '')}"><label>Qué<input name="actaTaskTitle" value="${escapeHtml(task.title || '')}" placeholder="Tarea"></label><label>Quién<select name="actaTaskAssigned"><option value="">Sin asignar</option>${options(adminData.users, task.assigned_to, user => user.name || user.email)}</select></label><label>Para cuándo<input name="actaTaskDue" type="date" value="${escapeHtml(task.due_date || '')}"></label><button type="button" class="remove-minute-task" aria-label="Quitar tarea">×</button></div>`); };
 const loadMinuteMeetingDetails = async meetingId => { const meeting = adminData.meetings.find(item => item.id === meetingId); if (!meeting) return; const agenda = await api(`/api/meetings/${meetingId}/agenda`); const fields = document.querySelector('#recordFields'); const attendees = (formState?.record?.attendees || '').split(',').map(item => item.trim()); fields.querySelector('[name="content"]').value = agenda.map(item => item.title).join('\n'); fields.querySelector('#attendeeChips').innerHTML = adminData.users.filter(user => departmentMembership(user, meeting.department_id)).map(user => `<label class="attendee-chip"><input type="checkbox" name="attendee" value="${escapeHtml(user.name || user.email)}" ${attendees.includes(user.name || user.email) ? 'checked' : ''}><span>${escapeHtml(user.name || user.email)}</span></label>`).join('') || '<p class="form-help">No hay miembros asignados al departamento.</p>'; };
 const openRecordForm = (type, record = null) => {
   formState = { type, record };
@@ -44,7 +45,7 @@ const openRecordForm = (type, record = null) => {
     const membership = user => (typeof user.departments === 'string' ? JSON.parse(user.departments) : user.departments).find(department => department.id === record.id);
     fields.innerHTML = `<p class="form-help">Selecciona a los miembros y asigna su permiso en este departamento.</p><div class="member-checks">${adminData.users.map(user => { const member = membership(user); return `<label><input type="checkbox" name="member" value="${escapeHtml(user.id)}" ${member ? 'checked' : ''}><span>${escapeHtml(user.name || user.email)}</span><small>${escapeHtml(user.email)}</small><select name="memberRole-${escapeHtml(user.id)}"><option value="teacher" ${member?.role !== 'manager' ? 'selected' : ''}>Profesor</option><option value="manager" ${member?.role === 'manager' ? 'selected' : ''}>Gestor</option></select></label>`; }).join('') || '<p>No hay usuarios creados.</p>'}</div>`;
   }
-  if (type === 'minutes') { minuteTaskCount = 0; const meetingId = record?.meeting_id || fields.querySelector('[name="meetingId"]')?.value; if (meetingId) loadMinuteMeetingDetails(meetingId).catch(() => showToast('No se pudieron cargar los datos de la reunión')); fields.querySelector('[name="meetingId"]')?.addEventListener('change', event => loadMinuteMeetingDetails(event.target.value).catch(() => showToast('No se pudieron cargar los datos de la reunión'))); addMinuteTaskRow(); }
+  if (type === 'minutes') { minuteTaskCount = 0; removedMinuteTaskIds = new Set(); const meetingId = record?.meeting_id || fields.querySelector('[name="meetingId"]')?.value; if (meetingId) loadMinuteMeetingDetails(meetingId).catch(() => showToast('No se pudieron cargar los datos de la reunión')); fields.querySelector('[name="meetingId"]')?.addEventListener('change', event => loadMinuteMeetingDetails(event.target.value).catch(() => showToast('No se pudieron cargar los datos de la reunión'))); const relatedTasks = record ? adminData.tasks.filter(task => task.meeting_id === record.meeting_id) : []; (relatedTasks.length ? relatedTasks : [{}]).forEach(addMinuteTaskRow); }
   document.querySelector('#recordModal').classList.add('open');
 };
 const saveRecordForm = async event => {
@@ -61,7 +62,7 @@ const saveRecordForm = async event => {
     await loadSchool();
   } else if (type === 'minutes') {
     const formData = new FormData(event.currentTarget); const meetingId = record?.meeting_id || data.meetingId; data.attendees = formData.getAll('attendee').join(', '); await api(`/api/meetings/${meetingId}/minutes`, { method: 'PATCH', body: JSON.stringify(data) });
-    const meeting = adminData.meetings.find(item => item.id === meetingId); const titles = formData.getAll('actaTaskTitle'); const assignees = formData.getAll('actaTaskAssigned'); const dueDates = formData.getAll('actaTaskDue'); await Promise.all(titles.map((title, index) => title ? api('/api/tasks', { method: 'POST', body: JSON.stringify({ departmentId: meeting.department_id, meetingId, title, assignedTo: assignees[index], dueDate: dueDates[index] }) }) : null));
+    const meeting = adminData.meetings.find(item => item.id === meetingId); const ids = formData.getAll('actaTaskId'); const titles = formData.getAll('actaTaskTitle'); const assignees = formData.getAll('actaTaskAssigned'); const dueDates = formData.getAll('actaTaskDue'); await Promise.all(titles.map((title, index) => title ? ids[index] ? api(`/api/tasks/${ids[index]}`, { method: 'PATCH', body: JSON.stringify({ title, assignedTo: assignees[index], dueDate: dueDates[index] }) }) : api('/api/tasks', { method: 'POST', body: JSON.stringify({ departmentId: meeting.department_id, meetingId, title, assignedTo: assignees[index], dueDate: dueDates[index] }) }) : null)); await Promise.all([...removedMinuteTaskIds].map(id => api(`/api/tasks/${id}`, { method: 'DELETE' })));
   } else {
     const endpoint = `/api/${type}${record ? `/${record.id}` : ''}`;
     await api(endpoint, { method: record ? 'PATCH' : 'POST', body: JSON.stringify(data) });
@@ -115,6 +116,7 @@ fetch('/api/session').then(response => {
   if (profile) profile.querySelector('strong').textContent = session.name || session.email;
   if (profile) profile.querySelector('small').textContent = session.isAdmin ? 'Administrador de la plataforma' : session.email;
   const firstName = (session.name || session.email).split(' ')[0];
+  const now = new Date(); const courseStart = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1; document.querySelector('#schoolYear').textContent = `Curso ${courseStart} / ${String(courseStart + 1).slice(-2)}`;
   document.querySelector('#todayDate').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase();
   document.querySelector('#welcomeName').innerHTML = `Buenos días, ${escapeHtml(firstName)} <span>✦</span>`;
   ['#profileAvatar'].forEach(selector => { const avatar = document.querySelector(selector); if (avatar) { avatar.textContent = firstName.slice(0, 2).toUpperCase(); if (session.picture) avatar.style.backgroundImage = `url(${session.picture})`; } });
@@ -167,7 +169,7 @@ document.querySelector('#adminList').addEventListener('click', async event => {
   } catch { showToast('No se pudo completar la acción'); }
 });
 document.querySelector('#recordForm').addEventListener('submit', event => saveRecordForm(event).catch(() => showToast('No se pudieron guardar los cambios')));
-document.querySelector('#recordForm').addEventListener('click', event => { if (event.target.closest('#addMinuteTask')) addMinuteTaskRow(); if (event.target.closest('.remove-minute-task')) event.target.closest('.minute-task-row').remove(); });
+document.querySelector('#recordForm').addEventListener('click', event => { if (event.target.closest('#addMinuteTask')) addMinuteTaskRow(); if (event.target.closest('.remove-minute-task')) { const row = event.target.closest('.minute-task-row'); if (row.dataset.taskId) removedMinuteTaskIds.add(row.dataset.taskId); row.remove(); } });
 ['#closeRecord', '#cancelRecord'].forEach(selector => document.querySelector(selector).addEventListener('click', () => document.querySelector('#recordModal').classList.remove('open')));
 document.querySelector('#recordModal').addEventListener('click', event => { if (event.target.id === 'recordModal') event.currentTarget.classList.remove('open'); });
 document.addEventListener('click', async event => { if (event.target.closest('#newMinute')) { try { await loadAdminData(); openRecordForm('minutes'); document.querySelector('#recordTitle').textContent = 'Nueva acta'; } catch { showToast('No tienes permiso para crear actas'); } } });

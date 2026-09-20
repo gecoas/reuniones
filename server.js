@@ -204,8 +204,8 @@ const server = http.createServer(async (request, response) => {
       return json(response, 200, result.rows[0] || { error: 'not_found' });
     }
     if (request.url?.startsWith('/api/tasks/') && request.method === 'DELETE') {
-      const session = requireAdmin(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; await pool.query('DELETE FROM tasks WHERE id = $1', [id]); return json(response, 204, null);
+      const session = requireSession(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const task = await pool.query('SELECT department_id FROM tasks WHERE id = $1', [id]); if (!task.rows[0] || !await canManageDepartment(session, task.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); await pool.query('DELETE FROM tasks WHERE id = $1', [id]); return json(response, 204, null);
     }
     const requested = new URL(request.url, appUrl).pathname;
     const file = requested === '/' ? 'index.html' : requested.slice(1);
