@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -196,7 +197,12 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.match(/^\/api\/minutes\/[^/]+\/send$/) && request.method === 'POST') {
       const session = requireSession(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; const minute = await pool.query('SELECT m.department_id FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id WHERE mi.id = $1', [id]); if (!minute.rows[0] || !await canManageDepartment(session, minute.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const result = await pool.query(`UPDATE minutes SET status = 'sent', sent_at = now(), updated_at = now() WHERE id = $1 RETURNING *`, [id]); return json(response, 200, result.rows[0]);
+      const id = request.url.split('/')[3]; const minute = await pool.query(`SELECT mi.*, m.department_id, m.title AS meeting_title, d.name AS department_name FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id JOIN departments d ON d.id = m.department_id WHERE mi.id = $1`, [id]); if (!minute.rows[0] || !await canManageDepartment(session, minute.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' });
+      const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM } = process.env; if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASSWORD || !SMTP_FROM) return json(response, 503, { error: 'smtp_not_configured' });
+      const recipients = await pool.query('SELECT u.email FROM department_members dm JOIN users u ON u.id = dm.user_id WHERE dm.department_id = $1', [minute.rows[0].department_id]); if (!recipients.rowCount) return json(response, 400, { error: 'no_department_members' });
+      const transporter = nodemailer.createTransport({ host: SMTP_HOST, port: Number(SMTP_PORT), secure: Number(SMTP_PORT) === 465, auth: { user: SMTP_USER, pass: SMTP_PASSWORD } }); const current = minute.rows[0];
+      await transporter.sendMail({ from: SMTP_FROM, to: SMTP_FROM, bcc: recipients.rows.map(row => row.email), subject: `Acta: ${current.meeting_title}`, text: `${current.department_name}\n\nAsistentes: ${current.attendees || 'No indicados'}\n\nResumen\n${current.summary || ''}\n\nPuntos tratados\n${current.content || ''}\n\nAcuerdos\n${current.agreements || ''}\n\nPendientes\n${current.pending || ''}` });
+      const result = await pool.query(`UPDATE minutes SET status = 'sent', sent_at = now(), updated_at = now() WHERE id = $1 RETURNING *`, [id]); return json(response, 200, result.rows[0]);
     }
     if (request.url === '/api/tasks' && request.method === 'POST') {
       const session = requireSession(request, response); if (!session) return;

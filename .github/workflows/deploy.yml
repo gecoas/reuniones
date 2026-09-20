@@ -18,6 +18,11 @@ jobs:
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMTP_FROM: ${{ secrets.SMTP_FROM }}
 
     steps:
       - name: Deploy by local runner
@@ -44,7 +49,12 @@ jobs:
           ADMIN_EMAIL=gbailly@alcaste-lasfuentes.com
           GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
           GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
-          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+           POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+           SMTP_HOST=$SMTP_HOST
+           SMTP_PORT=$SMTP_PORT
+           SMTP_USER=$SMTP_USER
+           SMTP_PASSWORD=$SMTP_PASSWORD
+           SMTP_FROM=$SMTP_FROM
           EOF
           chmod 600 "$APP_ENV"
           REMOTE_ENV=$(ssh deploy@$PROD_HOST "umask 077; mktemp /tmp/reuniones-app.XXXXXX")
