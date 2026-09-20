@@ -70,11 +70,11 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url === '/api/settings' && request.method === 'GET') {
       if (!requireSession(request, response)) return;
-      return json(response, 200, (await pool.query('SELECT name, logo_url FROM school_settings WHERE id = TRUE')).rows[0]);
+      return json(response, 200, (await pool.query('SELECT name, logo_url, email_from_name, email_from_address FROM school_settings WHERE id = TRUE')).rows[0]);
     }
     if (request.url === '/api/settings' && request.method === 'PATCH') {
       const session = requireAdmin(request, response); if (!session) return;
-      const body = await readBody(request); const result = await pool.query('UPDATE school_settings SET name = COALESCE($1, name), logo_url = NULLIF($2, \'\'), updated_at = now() WHERE id = TRUE RETURNING name, logo_url', [body.name || null, body.logoUrl ?? null]);
+      const body = await readBody(request); const result = await pool.query('UPDATE school_settings SET name = COALESCE($1, name), logo_url = NULLIF($2, \'\'), email_from_name = COALESCE($3, email_from_name), email_from_address = COALESCE($4, email_from_address), updated_at = now() WHERE id = TRUE RETURNING name, logo_url, email_from_name, email_from_address', [body.name || null, body.logoUrl ?? null, body.emailFromName || null, body.emailFromAddress || null]);
       return json(response, 200, result.rows[0]);
     }
     if (request.url?.match(/^\/api\/reminders\/[^/]+$/) && request.method === 'GET') {
