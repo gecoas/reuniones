@@ -146,7 +146,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url === '/api/tasks' && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
-      const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to ${ids ? 'WHERE t.department_id = ANY($1::uuid[])' : ''} ORDER BY t.due_date NULLS LAST, t.created_at DESC`, ids ? [ids] : []);
+      const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT t.*, u.name AS assignee_name, d.name AS department_name FROM tasks t JOIN departments d ON d.id = t.department_id LEFT JOIN users u ON u.id = t.assigned_to ${ids ? 'WHERE t.department_id = ANY($1::uuid[])' : ''} ORDER BY t.due_date NULLS LAST, t.created_at DESC`, ids ? [ids] : []);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/meetings' && request.method === 'GET') {
@@ -156,7 +156,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url === '/api/minutes' && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
-      const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT mi.*, m.title AS meeting_title, m.starts_at, d.name AS department_name FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id JOIN departments d ON d.id = m.department_id ${ids ? 'WHERE m.department_id = ANY($1::uuid[])' : ''} ORDER BY mi.updated_at DESC`, ids ? [ids] : []);
+      const ids = await accessibleDepartmentIds(session); const result = await pool.query(`SELECT mi.*, m.title AS meeting_title, m.starts_at, m.department_id, d.name AS department_name FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id JOIN departments d ON d.id = m.department_id ${ids ? 'WHERE m.department_id = ANY($1::uuid[])' : ''} ORDER BY mi.updated_at DESC`, ids ? [ids] : []);
       return json(response, 200, result.rows);
     }
     if (request.url === '/api/meetings' && request.method === 'POST') {
