@@ -180,7 +180,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.match(/^\/api\/meetings\/[^/]+\/agenda$/) && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
-      const meetingId = request.url.split('/')[3]; const result = await pool.query('SELECT id, title, position FROM agenda_items WHERE meeting_id = $1 ORDER BY position, created_at', [meetingId]); return json(response, 200, result.rows);
+      const meetingId = request.url.split('/')[3]; const result = await pool.query('SELECT ai.id, ai.title, ai.position, ai.proposed_by, u.name AS proposer_name FROM agenda_items ai LEFT JOIN users u ON u.id = ai.proposed_by WHERE ai.meeting_id = $1 ORDER BY ai.position, ai.created_at', [meetingId]); return json(response, 200, result.rows);
     }
     if (request.url?.match(/^\/api\/meetings\/[^/]+\/agenda$/) && request.method === 'POST') {
       const session = requireSession(request, response); if (!session) return;
