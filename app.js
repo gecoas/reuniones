@@ -10,6 +10,7 @@ let schoolSettings = null;
 let minuteTaskCount = 0;
 let editingMeetingId = null;
 let reminderDepartmentId = null;
+let dashboardMinutes = [];
 const renderAdminList = () => {
   const list = document.querySelector('#adminList');
   const items = adminData[adminSection];
@@ -76,6 +77,7 @@ const loadAdminData = async () => {
 };
 const formatDate = value => new Date(value).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 const renderDashboard = ({ meetings, tasks, minutes }) => {
+  dashboardMinutes = minutes;
   const nextMeeting = meetings.filter(meeting => new Date(meeting.starts_at) >= new Date()).sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))[0];
   const pendingTasks = tasks.filter(task => task.status !== 'done');
   const statCards = document.querySelectorAll('.stat-card');
@@ -89,7 +91,7 @@ const renderDashboard = ({ meetings, tasks, minutes }) => {
   const taskList = document.querySelector('.task-list');
   if (taskList) taskList.innerHTML = tasks.slice(0, 4).map(task => `<div class="task-row"><span class="check ${task.status === 'done' ? 'checked' : ''}">${task.status === 'done' ? '✓' : ''}</span><div class="task-copy"><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.assignee_name || 'Sin responsable')}${task.due_date ? ` · Vence ${formatDate(task.due_date)}` : ''}</small></div><span class="task-status ${task.status === 'done' ? 'done' : task.status === 'in_progress' ? 'progress' : 'pending'}">${task.status === 'done' ? 'Hecha' : task.status === 'in_progress' ? 'En curso' : 'Pendiente'}</span></div>`).join('') || '<p class="muted">No hay tareas creadas.</p>';
   const minutesPanel = document.querySelector('.minutes-panel');
-  if (minutesPanel) minutesPanel.innerHTML = `<div class="panel-header"><div><span class="label-with-dot"><i class="dot gold"></i> DOCUMENTACIÓN</span><h3>Últimas actas</h3></div>${currentSession?.isAdmin || currentSession?.isManager ? '<button class="add-task" id="newMinute">＋ Nueva acta</button>' : ''}</div>${minutes.slice(0, 3).map(minute => `<div class="minutes-row"><div class="doc-icon">▤</div><div class="doc-copy"><strong>Acta · ${escapeHtml(minute.meeting_title)}</strong><small>${escapeHtml(minute.department_name)} · ${formatDate(minute.updated_at)}</small></div><span class="${minute.status === 'sent' ? 'sent-tag' : 'review-tag'}">${minute.status === 'sent' ? 'Enviada' : 'Por revisar'}</span></div>`).join('') || '<p class="muted">No hay actas creadas.</p>'}`;
+  if (minutesPanel) minutesPanel.innerHTML = `<div class="panel-header"><div><span class="label-with-dot"><i class="dot gold"></i> DOCUMENTACIÓN</span><h3>Últimas actas</h3></div>${currentSession?.isAdmin || currentSession?.isManager ? '<button class="add-task" id="newMinute">＋ Nueva acta</button>' : ''}</div>${minutes.slice(0, 3).map(minute => `<div class="minutes-row"><div class="doc-icon">▤</div><div class="doc-copy"><strong>Acta · ${escapeHtml(minute.meeting_title)}</strong><small>${escapeHtml(minute.department_name)} · ${formatDate(minute.updated_at)}</small></div><span class="${minute.status === 'sent' ? 'sent-tag' : 'review-tag'}">${minute.status === 'sent' ? 'Enviada' : 'Por revisar'}</span>${currentSession?.isAdmin || currentSession?.isManager ? `<div class="minute-actions"><button data-edit-minute="${minute.id}">Editar</button><button data-send-minute="${minute.id}">Enviar</button><button class="danger" data-delete-minute="${minute.id}">Eliminar</button></div>` : ''}</div>`).join('') || '<p class="muted">No hay actas creadas.</p>'}`;
 };
 const loadDashboard = async () => renderDashboard(Object.fromEntries(await Promise.all(['meetings', 'tasks', 'minutes'].map(async resource => [resource, await api(`/api/${resource}`)]))));
 const authScreen = document.querySelector('#authScreen');
@@ -165,4 +167,5 @@ document.querySelector('#recordForm').addEventListener('click', event => { if (e
 document.querySelector('#recordModal').addEventListener('click', event => { if (event.target.id === 'recordModal') event.currentTarget.classList.remove('open'); });
 document.addEventListener('click', async event => { if (event.target.closest('#newMinute')) { try { await loadAdminData(); openRecordForm('minutes'); document.querySelector('#recordTitle').textContent = 'Nueva acta'; } catch { showToast('No tienes permiso para crear actas'); } } });
 document.addEventListener('click', event => { const button = event.target.closest('#openAgenda'); if (button) openMeetingForm(button.dataset.meetingId).catch(() => showToast('No tienes permiso para editar esta reunión')); });
+document.addEventListener('click', async event => { const button = event.target.closest('[data-edit-minute], [data-delete-minute], [data-send-minute]'); if (!button) return; const id = button.dataset.editMinute || button.dataset.deleteMinute || button.dataset.sendMinute; try { if (button.dataset.editMinute) { await loadAdminData(); openRecordForm('minutes', dashboardMinutes.find(minute => minute.id === id)); } if (button.dataset.deleteMinute && window.confirm('¿Eliminar esta acta?')) { await api(`/api/minutes/${id}`, { method: 'DELETE' }); await loadDashboard(); showToast('Acta eliminada'); } if (button.dataset.sendMinute) { await api(`/api/minutes/${id}/send`, { method: 'POST' }); await loadDashboard(); showToast('Acta marcada como enviada'); } } catch { showToast('No se pudo completar la acción sobre el acta'); } });
 document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => { if (item.classList.contains('dept')) { document.querySelectorAll('.dept').forEach(dept => dept.classList.remove('active-dept')); item.classList.add('active-dept'); } }));

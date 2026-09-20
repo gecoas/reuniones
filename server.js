@@ -186,8 +186,12 @@ const server = http.createServer(async (request, response) => {
       const meetingId = request.url.split('/')[3]; const meeting = await pool.query('SELECT department_id FROM meetings WHERE id = $1', [meetingId]); if (!meeting.rows[0] || !await canManageDepartment(session, meeting.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); await pool.query('DELETE FROM agenda_items WHERE meeting_id = $1', [meetingId]); const titles = Array.isArray(body.items) ? body.items : []; await Promise.all(titles.filter(Boolean).map((title, position) => pool.query('INSERT INTO agenda_items (meeting_id, title, position) VALUES ($1, $2, $3)', [meetingId, title, position]))); return json(response, 204, null);
     }
     if (request.url?.startsWith('/api/minutes/') && request.method === 'DELETE') {
-      const session = requireAdmin(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; await pool.query('DELETE FROM minutes WHERE id = $1', [id]); return json(response, 204, null);
+      const session = requireSession(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const minute = await pool.query('SELECT m.department_id FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id WHERE mi.id = $1', [id]); if (!minute.rows[0] || !await canManageDepartment(session, minute.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); await pool.query('DELETE FROM minutes WHERE id = $1', [id]); return json(response, 204, null);
+    }
+    if (request.url?.match(/^\/api\/minutes\/[^/]+\/send$/) && request.method === 'POST') {
+      const session = requireSession(request, response); if (!session) return;
+      const id = request.url.split('/')[3]; const minute = await pool.query('SELECT m.department_id FROM minutes mi JOIN meetings m ON m.id = mi.meeting_id WHERE mi.id = $1', [id]); if (!minute.rows[0] || !await canManageDepartment(session, minute.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' }); const result = await pool.query(`UPDATE minutes SET status = 'sent', sent_at = now(), updated_at = now() WHERE id = $1 RETURNING *`, [id]); return json(response, 200, result.rows[0]);
     }
     if (request.url === '/api/tasks' && request.method === 'POST') {
       const session = requireSession(request, response); if (!session) return;
