@@ -6,41 +6,129 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: production-${{ github.repository }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy to production
-    runs-on: [self-hosted, opencode, docker, production, deploy]
-    env:
-      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      SMTP_HOST: ${{ secrets.SMTP_HOST }}
-      SMTP_PORT: ${{ secrets.SMTP_PORT }}
-      SMTP_USER: ${{ secrets.SMTP_USER }}
-      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-      SMTP_FROM: ${{ secrets.SMTP_FROM }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
 
     steps:
-      - name: Deploy by local runner
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Connect to production network
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ vars.PROD_HOST }}
+
+      - name: Deploy by SSH
+        env:
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          PROD_USER: ${{ vars.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
           umask 077
 
+          : "${PROD_HOST:?Falta la variable PROD_HOST}"
+          : "${PROD_USER:?Falta la variable PROD_USER}"
+          : "${PROD_SSH_KEY:?Falta el secreto PROD_SSH_KEY}"
+          : "${GITHUB_SHA:?Falta GITHUB_SHA}"
+
+          if [[ "$PROD_HOST" != "100.86.174.92" ]]; then
+            echo "PROD_HOST no coincide con el servidor Tailscale esperado" >&2
+            exit 1
+          fi
+          if [[ "$PROD_USER" != "deploy" ]]; then
+            echo "PROD_USER no coincide con el usuario de despliegue esperado" >&2
+            exit 1
+          fi
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GITHUB_SHA no tiene formato de commit valido" >&2
+            exit 1
+          fi
+
           PROJECT_NAME="reuniones"
-          PROD_HOST="192.168.35.27"
           PROD_PATH="/opt/proyectos/reuniones"
           REPO_SSH="git@github-gecoas-prod:gecoas/reuniones.git"
+          KNOWN_HOSTS="$GITHUB_WORKSPACE/.github/production_known_hosts"
+          SSH_DIR="$(mktemp -d)"
+          SSH_KEY="$SSH_DIR/id_ed25519"
+          SSH_PUBLIC="$SSH_DIR/id_ed25519.pub"
           APP_ENV=$(mktemp)
           REMOTE_ENV=""
+          SSH_OPTIONS=()
+
           cleanup() {
-            rm -f "$APP_ENV"
-            if [ -n "$REMOTE_ENV" ]; then ssh deploy@$PROD_HOST "rm -f '$REMOTE_ENV'" || true; fi
+            local status=$?
+            if [[ -n "$REMOTE_ENV" ]]; then
+              ssh "${SSH_OPTIONS[@]}" "$PROD_USER@$PROD_HOST" "rm -f -- '$REMOTE_ENV'" >/dev/null 2>&1 || true
+            fi
+            rm -f -- "$APP_ENV" "$SSH_KEY" "$SSH_PUBLIC" 2>/dev/null || true
+            rmdir -- "$SSH_DIR" 2>/dev/null || true
+            exit "$status"
           }
           trap cleanup EXIT
+
+          test -r "$KNOWN_HOSTS" || { echo "Falta la clave de host versionada" >&2; exit 1; }
+          grep -Eq '^100\.86\.174\.92[[:space:]]+ssh-ed25519[[:space:]]+[A-Za-z0-9+/]+={0,2}$' "$KNOWN_HOSTS" || {
+            echo "La clave ed25519 de producción no esta en el formato esperado" >&2
+            exit 1
+          }
+
+          printf '%s\n' "$PROD_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          if ! ssh-keygen -y -f "$SSH_KEY" > "$SSH_PUBLIC"; then
+            echo "PROD_SSH_KEY no es una clave privada SSH valida" >&2
+            exit 1
+          fi
+          chmod 600 "$SSH_PUBLIC"
+          test -s "$SSH_PUBLIC" || { echo "PROD_SSH_KEY no produjo una clave publica" >&2; exit 1; }
+
+          ssh-keygen -F "$PROD_HOST" -f "$KNOWN_HOSTS" >/dev/null 2>&1 || {
+            echo "No se encontro la clave de host de producción" >&2
+            exit 1
+          }
+
+          SSH_OPTIONS=(
+            -i "$SSH_KEY"
+            -o "Port=22"
+            -o "StrictHostKeyChecking=yes"
+            -o "UserKnownHostsFile=$KNOWN_HOSTS"
+            -o "IdentitiesOnly=yes"
+            -o "BatchMode=yes"
+            -o "PasswordAuthentication=no"
+            -o "KbdInteractiveAuthentication=no"
+            -o "PubkeyAuthentication=yes"
+            -o "ForwardAgent=no"
+            -o "ClearAllForwardings=yes"
+            -o "HostKeyAlgorithms=ssh-ed25519"
+          )
+
+          # This connection validates the Tailscale address, user and pinned host key.
+          ssh -T "${SSH_OPTIONS[@]}" "$PROD_USER@$PROD_HOST" true
 
           test -n "$GOOGLE_CLIENT_ID" || { echo "Falta el secreto GOOGLE_CLIENT_ID"; exit 1; }
           test -n "$GOOGLE_CLIENT_SECRET" || { echo "Falta el secreto GOOGLE_CLIENT_SECRET"; exit 1; }
@@ -55,28 +143,43 @@ jobs:
            SMTP_USER=$SMTP_USER
            SMTP_PASSWORD=$SMTP_PASSWORD
            SMTP_FROM=$SMTP_FROM
+           GEMINI_API_KEY=$GEMINI_API_KEY
           EOF
           chmod 600 "$APP_ENV"
-          REMOTE_ENV=$(ssh deploy@$PROD_HOST "umask 077; mktemp /tmp/reuniones-app.XXXXXX")
-          scp "$APP_ENV" "deploy@$PROD_HOST:$REMOTE_ENV"
+          REMOTE_ENV="$(ssh "${SSH_OPTIONS[@]}" "$PROD_USER@$PROD_HOST" "umask 077; mktemp /tmp/${PROJECT_NAME}-app.XXXXXX")"
+          [[ "$REMOTE_ENV" =~ ^/tmp/reuniones-app\.[[:alnum:]_-]+$ ]] || {
+            echo "La ruta temporal remota no tiene el formato esperado" >&2
+            exit 1
+          }
+          scp -q "${SSH_OPTIONS[@]}" "$APP_ENV" "$PROD_USER@$PROD_HOST:$REMOTE_ENV"
 
-          ssh deploy@$PROD_HOST "
+          REMOTE_COMMAND="REMOTE_ENV='$REMOTE_ENV' PROJECT_NAME='$PROJECT_NAME' PROD_PATH='$PROD_PATH' REPO_SSH='$REPO_SSH' GITHUB_SHA='$GITHUB_SHA' flock -w 120 /tmp/${PROJECT_NAME}-deploy.lock bash -s"
+          ssh "${SSH_OPTIONS[@]}" "$PROD_USER@$PROD_HOST" "$REMOTE_COMMAND" <<'REMOTE'
             set -euo pipefail
             umask 077
-            trap 'rm -f \"$REMOTE_ENV\"' EXIT
+            trap 'rm -f -- "$REMOTE_ENV"' EXIT
 
-            mkdir -p '$PROD_PATH'
-            cd '$PROD_PATH'
+            mkdir -p "$PROD_PATH"
+            cd "$PROD_PATH"
 
             if [ ! -d .git ]; then
-              git clone '$REPO_SSH' .
+              git init --quiet
+              git remote add origin "$REPO_SSH"
+            elif git remote get-url origin >/dev/null 2>&1; then
+              git remote set-url origin "$REPO_SSH"
             else
-              git remote set-url origin '$REPO_SSH'
-              git fetch origin main
-              git reset --hard origin/main
+              git remote add origin "$REPO_SSH"
             fi
 
-            cp '$REMOTE_ENV' .env
+            git fetch --quiet origin "$GITHUB_SHA"
+            git checkout --detach --force "$GITHUB_SHA"
+            git reset --hard "$GITHUB_SHA"
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || {
+              echo 'El checkout/reset no coincide con GITHUB_SHA' >&2
+              exit 1
+            }
+
+            cp "$REMOTE_ENV" .env
             chmod 600 .env
 
             docker compose -f docker-compose.yml up -d --build --remove-orphans
@@ -84,4 +187,4 @@ jobs:
 
             echo 'Deploy completado correctamente'
             docker compose -f docker-compose.yml ps
-          "
+          REMOTE
