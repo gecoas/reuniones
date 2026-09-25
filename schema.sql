@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS reminder_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS meetings_department_idx ON meetings(department_id, starts_at);
 CREATE INDEX IF NOT EXISTS tasks_assigned_idx ON tasks(assigned_to, status, due_date);
 CREATE INDEX IF NOT EXISTS agenda_meeting_idx ON agenda_items(meeting_id, position);

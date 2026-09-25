@@ -39,6 +39,21 @@ const accessibleDepartmentIds = async session => {
   return (await pool.query('SELECT department_id AS id FROM department_members WHERE user_id = $1', [user.rows[0].id])).rows.map(row => row.id);
 };
 const canManageDepartment = async (session, departmentId) => session.isAdmin || (await pool.query('SELECT 1 FROM department_members dm JOIN users u ON u.id = dm.user_id WHERE dm.department_id = $1 AND u.email = $2 AND dm.role = $3', [departmentId, session.email, 'manager'])).rowCount > 0;
+const madridPart = (part, options) => new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', ...options }).formatToParts(new Date()).find(item => item.type === part)?.value;
+const sendTaskReminders = async () => {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM } = process.env; if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASSWORD || !SMTP_FROM) return;
+  if (Number(madridPart('hour', { hour: 'numeric', hourCycle: 'h23' })) !== 8) return;
+  const weekday = madridPart('weekday', { weekday: 'short' }); const settings = await pool.query(`SELECT d.id AS department_id, COALESCE(rs.frequency, 'weekly') AS frequency, rs.last_sent_at, d.name AS department_name FROM departments d LEFT JOIN reminder_settings rs ON rs.department_id = d.id WHERE COALESCE(rs.frequency, 'weekly') <> 'disabled'`); const transporter = nodemailer.createTransport({ host: SMTP_HOST, port: Number(SMTP_PORT), secure: Number(SMTP_PORT) === 465, auth: { user: SMTP_USER, pass: SMTP_PASSWORD } });
+  for (const setting of settings.rows) {
+    const allowedDay = setting.frequency === 'weekly' ? weekday === 'Mon' : weekday === 'Mon' || weekday === 'Thu'; if (!allowedDay || (setting.last_sent_at && Date.now() - new Date(setting.last_sent_at).getTime() < 20 * 60 * 60 * 1000)) continue;
+    const members = await pool.query('SELECT u.id, u.name, u.email FROM department_members dm JOIN users u ON u.id = dm.user_id WHERE dm.department_id = $1', [setting.department_id]);
+    for (const member of members.rows) {
+      const tasks = await pool.query(`SELECT title, due_date, status FROM tasks WHERE department_id = $1 AND assigned_to = $2 AND status <> 'done' ORDER BY due_date NULLS LAST, created_at`, [setting.department_id, member.id]); if (!tasks.rowCount) continue;
+      const list = tasks.rows.map(task => `<li><strong>${escapeEmailHtml(task.title)}</strong>${task.due_date ? ` · vence ${new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', timeZone: 'Europe/Madrid' }).format(new Date(task.due_date))}` : ''}</li>`).join(''); await transporter.sendMail({ from: SMTP_FROM, to: member.email, subject: `Tareas pendientes · Área de ${setting.department_name}`, text: `Hola ${member.name},\n\nTienes ${tasks.rowCount} tareas pendientes en el área de ${setting.department_name}.`, html: `<div style="font-family:Arial,sans-serif;color:#25282c"><h2>Tareas pendientes</h2><p>Hola ${escapeEmailHtml(member.name)}, tienes estas tareas pendientes del área de <strong>${escapeEmailHtml(setting.department_name)}</strong>:</p><ul>${list}</ul></div>` });
+    }
+    await pool.query(`INSERT INTO reminder_settings (department_id, frequency, last_sent_at) VALUES ($1, $2, now()) ON CONFLICT (department_id) DO UPDATE SET last_sent_at = now()`, [setting.department_id, setting.frequency]); console.log(`Recordatorios enviados para ${setting.department_name}`);
+  }
+};
 
 async function callback(request, response) {
   const query = new URL(request.url, appUrl).searchParams;
@@ -109,7 +124,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.match(/^\/api\/reminders\/[^/]+$/) && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
-      const departmentId = request.url.split('/')[3]; if (!await canManageDepartment(session, departmentId)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO reminder_settings (department_id, frequency, updated_by) VALUES ($1, $2, $3) ON CONFLICT (department_id) DO UPDATE SET frequency = EXCLUDED.frequency, updated_by = EXCLUDED.updated_by, updated_at = now() RETURNING frequency', [departmentId, body.frequency, user.rows[0]?.id || null]); return json(response, 200, result.rows[0]);
+      const departmentId = request.url.split('/')[3]; if (!await canManageDepartment(session, departmentId)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); const user = await pool.query('SELECT id FROM users WHERE email = $1', [session.email]); const result = await pool.query('INSERT INTO reminder_settings (department_id, frequency, updated_by) VALUES ($1, $2, $3) ON CONFLICT (department_id) DO UPDATE SET frequency = EXCLUDED.frequency, updated_by = EXCLUDED.updated_by, last_sent_at = NULL, updated_at = now() RETURNING frequency', [departmentId, body.frequency, user.rows[0]?.id || null]); return json(response, 200, result.rows[0]);
     }
     if (request.url === '/api/departments' && request.method === 'GET') {
       const session = requireSession(request, response); if (!session) return;
@@ -260,6 +275,8 @@ const server = http.createServer(async (request, response) => {
 });
 async function start() {
   await pool.query(schema);
+  sendTaskReminders().catch(error => console.error('No se pudieron enviar recordatorios', error));
+  setInterval(() => sendTaskReminders().catch(error => console.error('No se pudieron enviar recordatorios', error)), 30 * 60 * 1000);
   server.listen(port, '0.0.0.0', () => console.log(`Reuniones escuchando en ${port}`));
 }
 start().catch(error => { console.error('No se pudo inicializar PostgreSQL', error); process.exit(1); });
