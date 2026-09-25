@@ -97,8 +97,8 @@ const renderDashboard = ({ meetings, tasks, minutes }) => {
   if (statCards[0]) statCards[0].innerHTML = `<div class="stat-head"><span>Próxima reunión</span><span class="mini-icon coral-bg">◷</span></div><strong>${nextMeeting ? formatDate(nextMeeting.starts_at) : 'Sin reuniones'}</strong><p>${nextMeeting ? `${escapeHtml(nextMeeting.department_name)} · ${new Date(nextMeeting.starts_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Crea una desde Administración'}</p>`;
   if (statCards[1]) statCards[1].innerHTML = `<div class="stat-head"><span>Tareas pendientes</span><span class="mini-icon blue-bg">✓</span></div><strong class="big-number">${pendingTasks.length}</strong><p>${tasks.length ? `${tasks.filter(task => task.status === 'done').length} completadas` : 'No hay tareas creadas'}</p>`;
   if (statCards[2]) statCards[2].innerHTML = `<div class="stat-head"><span>Actas por revisar</span><span class="mini-icon gold-bg">▤</span></div><strong class="big-number">${minutes.filter(minute => minute.status !== 'sent').length}</strong><p>${minutes.length ? 'De tus departamentos' : 'No hay actas creadas'}</p>`;
-  const heading = document.querySelector('.section-heading h2');
-  const headingSub = document.querySelector('.section-heading p');
+  const heading = document.querySelector('.content-wrap > .section-heading h2');
+  const headingSub = document.querySelector('.content-wrap > .section-heading p');
   const selectedArea = activeDepartmentId ? (activeDepartmentName || adminData.departments.find(area => area.id === activeDepartmentId)?.name || nextMeeting?.department_name) : nextMeeting?.department_name;
   if (heading) heading.textContent = selectedArea ? `Área de ${selectedArea}` : 'Actividad reciente';
   if (headingSub) headingSub.textContent = selectedArea ? 'Actividad del área' : 'Actividad reciente';
@@ -133,7 +133,8 @@ fetch('/api/session').then(response => {
   const firstName = (session.name || session.email).split(' ')[0];
   document.querySelector('#schoolYear').textContent = `Curso ${currentSchoolYear()}`;
   document.querySelector('#todayDate').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase();
-  document.querySelector('#welcomeName').innerHTML = `Buenos días, ${escapeHtml(firstName)} <span>✦</span>`;
+  const hour = Number(new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', hour: 'numeric', hourCycle: 'h23' }).format(new Date())); const greeting = hour < 12 ? 'Buenos días' : hour < 20 ? 'Buenas tardes' : 'Buenas noches';
+  document.querySelector('#welcomeName').innerHTML = `${greeting}, ${escapeHtml(firstName)} <span>✦</span>`;
   ['#profileAvatar'].forEach(selector => { const avatar = document.querySelector(selector); if (avatar) { avatar.textContent = firstName.slice(0, 2).toUpperCase(); if (session.picture) avatar.style.backgroundImage = `url(${session.picture})`; } });
   if (session.isAdmin || session.isManager) {
     const admin = document.querySelector('#adminNav');
