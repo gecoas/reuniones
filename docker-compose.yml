@@ -35,9 +35,27 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_FROM=${SMTP_FROM}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - WHISPER_URL=http://whisper:8000
     depends_on:
       db:
         condition: service_healthy
+      whisper:
+        condition: service_healthy
+
+  whisper:
+    build: ./whisper-service
+    container_name: reuniones-whisper
+    restart: unless-stopped
+    environment:
+      - WHISPER_MODEL=small
+    volumes:
+      - reuniones_whisper_models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
 
 volumes:
   reuniones_postgres_data:
+  reuniones_whisper_models:
