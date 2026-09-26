@@ -1,6 +1,6 @@
 const modal = document.querySelector('#modal');
 const toast = document.querySelector('#toast');
-const showToast = (message) => { toast.textContent = message; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2400); };
+const showToast = (message) => { toast.textContent = String(message).replace('OpenAI', 'Groq'); toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2400); };
 const api = (url, options) => fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options }).then(async response => { if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || `API ${response.status}`); } return response.status === 204 ? null : response.json(); });
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 let adminSection = 'departments';
