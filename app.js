@@ -208,6 +208,7 @@ const originalRecordForm = document.querySelector('#recordForm');
 const enhancedRecordForm = originalRecordForm.cloneNode(true);
 originalRecordForm.replaceWith(enhancedRecordForm);
 enhancedRecordForm.addEventListener('submit', event => saveRecordForm(event).catch(() => showToast('No se pudieron guardar los cambios')));
+['#closeRecord', '#cancelRecord'].forEach(selector => enhancedRecordForm.querySelector(selector).addEventListener('click', () => document.querySelector('#recordModal').classList.remove('open')));
 enhancedRecordForm.addEventListener('click', async event => {
   if (event.target.closest('#addMinuteTask')) addMinuteTaskRow();
   if (event.target.closest('.remove-minute-task')) { const row = event.target.closest('.minute-task-row'); if (row.dataset.taskId) removedMinuteTaskIds.add(row.dataset.taskId); row.remove(); }
