@@ -41,10 +41,10 @@ const accessibleDepartmentIds = async session => {
 const canManageDepartment = async (session, departmentId) => session.isAdmin || (await pool.query('SELECT 1 FROM department_members dm JOIN users u ON u.id = dm.user_id WHERE dm.department_id = $1 AND u.email = $2 AND dm.role = $3', [departmentId, session.email, 'manager'])).rowCount > 0;
 const structureTranscript = async transcript => {
   if (!process.env.GROQ_API_KEY) return { draftError: 'groq_not_configured' };
-  const prompt = `Convierte esta transcripción de una reunión en JSON con estas claves: summary (máximo cinco líneas), agreements (lista numerada, un acuerdo por línea), pending (lista numerada, un pendiente por línea), tasks (lista de objetos con title, assignee y dueDate en formato YYYY-MM-DD o vacío). No incluyas content: los puntos tratados ya vienen del orden del día. No inventes información. Usa español.\n\nTranscripción:\n${transcript}`;
+  const safeTranscript = transcript.slice(0, 30000); const prompt = `Convierte esta transcripción de una reunión en JSON con estas claves: summary (máximo cinco líneas), agreements (lista numerada, un acuerdo por línea), pending (lista numerada, un pendiente por línea), tasks (lista de objetos con title, assignee y dueDate en formato YYYY-MM-DD o vacío). No incluyas content: los puntos tratados ya vienen del orden del día. No inventes información. Usa español.\n\nTranscripción:\n${safeTranscript}`;
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: JSON.stringify({ model: 'openai/gpt-oss-20b', max_tokens: 1200, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Devuelve únicamente un objeto JSON válido.' }, { role: 'user', content: prompt }] }) });
-  if (!response.ok) return { draftError: 'groq_generation_failed' };
-  try { return JSON.parse((await response.json()).choices?.[0]?.message?.content); } catch { return { draftError: 'groq_generation_failed' }; }
+  if (!response.ok) { console.error(`Groq no pudo estructurar el acta: ${response.status} ${(await response.text()).slice(0, 500)}`); return { draftError: 'groq_generation_failed' }; }
+  try { return JSON.parse((await response.json()).choices?.[0]?.message?.content); } catch (error) { console.error('Groq devolvió un JSON inválido', error); return { draftError: 'groq_generation_failed' }; }
 };
 const madridPart = (part, options) => new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', ...options }).formatToParts(new Date()).find(item => item.type === part)?.value;
 const sendTaskReminders = async () => {
