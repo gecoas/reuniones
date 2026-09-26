@@ -40,11 +40,11 @@ const accessibleDepartmentIds = async session => {
 };
 const canManageDepartment = async (session, departmentId) => session.isAdmin || (await pool.query('SELECT 1 FROM department_members dm JOIN users u ON u.id = dm.user_id WHERE dm.department_id = $1 AND u.email = $2 AND dm.role = $3', [departmentId, session.email, 'manager'])).rowCount > 0;
 const structureTranscript = async transcript => {
-  if (!process.env.GEMINI_API_KEY) return { content: transcript, draftError: 'gemini_not_configured' };
+  if (!process.env.GEMINI_API_KEY) return { draftError: 'gemini_not_configured' };
   const prompt = `Convierte esta transcripción de una reunión en JSON válido con estas claves: summary (máximo cinco líneas), content (puntos tratados), agreements (acuerdos numerados), pending (pendientes para la próxima reunión). No inventes información. Usa español.\n\nTranscripción:\n${transcript}`;
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } }) });
-  if (!response.ok) return { content: transcript, draftError: 'gemini_generation_failed' };
-  try { return JSON.parse((await response.json()).candidates?.[0]?.content?.parts?.[0]?.text); } catch { return { content: transcript, draftError: 'gemini_generation_failed' }; }
+  if (!response.ok) return { draftError: 'gemini_generation_failed' };
+  try { return JSON.parse((await response.json()).candidates?.[0]?.content?.parts?.[0]?.text); } catch { return { draftError: 'gemini_generation_failed' }; }
 };
 const madridPart = (part, options) => new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', ...options }).formatToParts(new Date()).find(item => item.type === part)?.value;
 const sendTaskReminders = async () => {
