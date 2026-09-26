@@ -48,6 +48,7 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
           umask 077
@@ -144,6 +145,7 @@ jobs:
            SMTP_PASSWORD=$SMTP_PASSWORD
            SMTP_FROM=$SMTP_FROM
            GEMINI_API_KEY=$GEMINI_API_KEY
+           OPENAI_API_KEY=$OPENAI_API_KEY
           EOF
           chmod 600 "$APP_ENV"
           REMOTE_ENV="$(ssh "${SSH_OPTIONS[@]}" "$PROD_USER@$PROD_HOST" "umask 077; mktemp /tmp/${PROJECT_NAME}-app.XXXXXX")"
