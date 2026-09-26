@@ -42,7 +42,7 @@ const canManageDepartment = async (session, departmentId) => session.isAdmin || 
 const structureTranscript = async transcript => {
   if (!process.env.GROQ_API_KEY) return { draftError: 'groq_not_configured' };
   const prompt = `Convierte esta transcripción de una reunión en JSON con estas claves: summary (máximo cinco líneas), content (puntos tratados), agreements (acuerdos numerados), pending (pendientes para la próxima reunión). No inventes información. Usa español.\n\nTranscripción:\n${transcript}`;
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: JSON.stringify({ model: 'llama-3.1-8b-instant', response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Devuelve únicamente un objeto JSON válido.' }, { role: 'user', content: prompt }] }) });
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: JSON.stringify({ model: 'openai/gpt-oss-20b', max_tokens: 1200, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Devuelve únicamente un objeto JSON válido.' }, { role: 'user', content: prompt }] }) });
   if (!response.ok) return { draftError: 'groq_generation_failed' };
   try { return JSON.parse((await response.json()).choices?.[0]?.message?.content); } catch { return { draftError: 'groq_generation_failed' }; }
 };
