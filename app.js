@@ -47,7 +47,7 @@ const openRecordForm = (type, record = null) => {
   const recordModal = document.querySelector('#recordModal');
   recordModal?.querySelector('.record-modal')?.classList.remove('expanded');
   const expandButton = document.querySelector('#expandRecord');
-  if (expandButton) { expandButton.hidden = type !== 'minutes'; expandButton.textContent = '⛶'; expandButton.title = 'Ampliar formulario'; expandButton.setAttribute('aria-label', 'Ampliar formulario'); }
+  if (expandButton) { expandButton.hidden = type !== 'minutes'; expandButton.textContent = '⛶ Ampliar ventana'; expandButton.title = 'Ampliar ventana'; expandButton.setAttribute('aria-label', 'Ampliar ventana'); }
   const fields = document.querySelector('#recordFields');
   const titles = { departments: 'Área', users: 'Usuario', leaders: 'Directivos', meetings: 'Reunión', minutes: 'Acta', tasks: 'Tarea', members: 'Miembros del área', settings: 'Configuración del centro', emailSettings: 'Configuración de correo', objective: 'Objetivos del área' };
   document.querySelector('#recordTitle').textContent = `${record ? 'Editar' : 'Crear'} ${titles[type]}`;
@@ -233,7 +233,7 @@ const originalRecordForm = document.querySelector('#recordForm');
 const enhancedRecordForm = originalRecordForm.cloneNode(true);
 originalRecordForm.replaceWith(enhancedRecordForm);
 enhancedRecordForm.addEventListener('submit', event => saveRecordForm(event).catch(() => showToast('No se pudieron guardar los cambios')));
-enhancedRecordForm.querySelector('#expandRecord')?.addEventListener('click', event => { const expanded = document.querySelector('#recordModal .record-modal').classList.toggle('expanded'); event.currentTarget.textContent = expanded ? '↙' : '⛶'; event.currentTarget.title = expanded ? 'Restaurar tamaño' : 'Ampliar formulario'; event.currentTarget.setAttribute('aria-label', event.currentTarget.title); });
+enhancedRecordForm.querySelector('#expandRecord')?.addEventListener('click', event => { const expanded = document.querySelector('#recordModal .record-modal').classList.toggle('expanded'); event.currentTarget.textContent = expanded ? '↙ Restaurar tamaño' : '⛶ Ampliar ventana'; event.currentTarget.title = expanded ? 'Restaurar tamaño' : 'Ampliar ventana'; event.currentTarget.setAttribute('aria-label', event.currentTarget.title); });
 ['#closeRecord', '#cancelRecord'].forEach(selector => enhancedRecordForm.querySelector(selector).addEventListener('click', () => document.querySelector('#recordModal').classList.remove('open')));
 enhancedRecordForm.addEventListener('click', async event => {
   if (event.target.closest('#addMinuteTask')) addMinuteTaskRow();
