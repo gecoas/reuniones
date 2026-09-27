@@ -39,9 +39,22 @@ const accessibleDepartmentIds = async session => {
   return (await pool.query('SELECT department_id AS id FROM department_members WHERE user_id = $1', [user.rows[0].id])).rows.map(row => row.id);
 };
 const canManageDepartment = async (session, departmentId) => session.isAdmin || (await pool.query('SELECT 1 FROM department_members dm JOIN users u ON u.id = dm.user_id WHERE dm.department_id = $1 AND u.email = $2 AND dm.role = $3', [departmentId, session.email, 'manager'])).rowCount > 0;
-const structureTranscript = async transcript => {
+const structureTranscript = async (transcript, agendaItems) => {
   if (!process.env.GROQ_API_KEY) return { draftError: 'groq_not_configured' };
-  const safeTranscript = transcript.slice(0, 30000); const prompt = `Devuelve únicamente JSON válido con: summary (máximo cinco líneas), agreements (máximo 8 acuerdos, lista numerada), pending (máximo 8 pendientes, lista numerada), tasks (máximo 10 objetos {title, assignee, dueDate YYYY-MM-DD o vacío}). No incluyas content. No inventes información. Usa español y sé conciso.\n\nTranscripción:\n${safeTranscript}`;
+  const safeTranscript = transcript.slice(0, 30000); const prompt = `Devuelve únicamente JSON válido con: summary (máximo cinco líneas), agreements (lista numerada), pending (lista numerada), tasks (lista de objetos {title, assignee, dueDate YYYY-MM-DD o vacío}).
+
+Separa estrictamente los conceptos:
+- agreements: decisiones, normas, criterios o pautas que el área acuerda seguir. No incluyas acciones individuales ni temas pendientes.
+- tasks: acciones concretas que debe realizar una persona o grupo. Solo incluye una tarea si se menciona una acción a realizar; asigna responsable solo si se indica.
+- pending: únicamente puntos del orden del día que no se trataron o quedaron aplazados por falta de tiempo. No repitas acuerdos ni tareas. Si no hay evidencias, usa una lista vacía.
+
+No inventes información. No incluyas content porque los puntos tratados ya están en el acta. Usa español y sé conciso.
+
+Orden del día:
+${agendaItems.map((item, index) => `${index + 1}. ${item}`).join('\n') || 'No disponible'}
+
+Transcripción:
+${safeTranscript}`;
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: JSON.stringify({ model: 'openai/gpt-oss-20b', max_tokens: 4096, reasoning_effort: 'low', response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Devuelve únicamente un objeto JSON válido.' }, { role: 'user', content: prompt }] }) });
   if (!response.ok) { console.error(`Groq no pudo estructurar el acta: ${response.status} ${(await response.text()).slice(0, 500)}`); return { draftError: 'groq_generation_failed' }; }
   try { return JSON.parse((await response.json()).choices?.[0]?.message?.content); } catch (error) { console.error('Groq devolvió un JSON inválido', error); return { draftError: 'groq_generation_failed' }; }
@@ -241,7 +254,7 @@ const server = http.createServer(async (request, response) => {
       const session = requireSession(request, response); if (!session) return;
       const meetingId = request.url.split('/')[3]; const meeting = await pool.query('SELECT department_id FROM meetings WHERE id = $1', [meetingId]); if (!meeting.rows[0] || !await canManageDepartment(session, meeting.rows[0].department_id)) return json(response, 403, { error: 'department_manager_required' });
       const mimeType = audioMimeType(request); if (!mimeType) return json(response, 400, { error: 'unsupported_audio_format' }); const audio = await readBinary(request); if (!audio.length) return json(response, 400, { error: 'audio_required' }); const filename = decodeURIComponent(request.headers['x-file-name'] || 'reunion-audio'); console.log(`Transcribiendo audio local: ${mimeType}, ${audio.length} bytes`);
-      const form = new FormData(); form.append('audio', new Blob([audio], { type: mimeType }), filename); const whisper = await fetch(`${process.env.WHISPER_URL || 'http://whisper:8000'}/transcribe`, { method: 'POST', body: form }); if (!whisper.ok) return json(response, 503, { error: 'whisper_unavailable' }); const transcript = (await whisper.json()).transcript; const draft = await structureTranscript(transcript); return json(response, 200, { transcript, ...draft });
+      const form = new FormData(); form.append('audio', new Blob([audio], { type: mimeType }), filename); const whisper = await fetch(`${process.env.WHISPER_URL || 'http://whisper:8000'}/transcribe`, { method: 'POST', body: form }); if (!whisper.ok) return json(response, 503, { error: 'whisper_unavailable' }); const transcript = (await whisper.json()).transcript; const agenda = await pool.query('SELECT title FROM agenda_items WHERE meeting_id = $1 ORDER BY position, created_at', [meetingId]); const draft = await structureTranscript(transcript, agenda.rows.map(item => item.title)); return json(response, 200, { transcript, ...draft });
     }
     if (request.url?.startsWith('/api/minutes/') && request.method === 'DELETE') {
       const session = requireSession(request, response); if (!session) return;
