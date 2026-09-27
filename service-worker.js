@@ -1,5 +1,5 @@
-const CACHE = 'reuniones-static-v3';
-const ASSETS = ['/', '/index.html', '/styles.css?v=readable-desktop-1', '/app.js?v=readable-desktop-1', '/app-icon.svg', '/manifest.webmanifest'];
+const CACHE = 'reuniones-static-v4';
+const ASSETS = ['/', '/index.html', '/styles.css?v=dashboard-scale-1', '/app.js?v=dashboard-scale-1', '/app-icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
