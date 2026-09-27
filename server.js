@@ -57,7 +57,7 @@ Transcripción:
 ${safeTranscript}`;
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` }, body: JSON.stringify({ model: 'openai/gpt-oss-20b', max_tokens: 4096, reasoning_effort: 'low', response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Devuelve únicamente un objeto JSON válido.' }, { role: 'user', content: prompt }] }) });
   if (!response.ok) { console.error(`Groq no pudo estructurar el acta: ${response.status} ${(await response.text()).slice(0, 500)}`); return { draftError: 'groq_generation_failed' }; }
-  try { return JSON.parse((await response.json()).choices?.[0]?.message?.content); } catch (error) { console.error('Groq devolvió un JSON inválido', error); return { draftError: 'groq_generation_failed' }; }
+  try { const draft = JSON.parse((await response.json()).choices?.[0]?.message?.content); const items = Array.isArray(draft.agreements) ? draft.agreements : String(draft.agreements || '').split(/\r?\n/).filter(Boolean); draft.agreements = items.map(item => String(item).replace(/^\s*\d+[.)]\s*/, '').trim()).filter(Boolean).map((item, index) => `${index + 1}. ${item}`).join('\n'); return draft; } catch (error) { console.error('Groq devolvió un JSON inválido', error); return { draftError: 'groq_generation_failed' }; }
 };
 const madridPart = (part, options) => new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', ...options }).formatToParts(new Date()).find(item => item.type === part)?.value;
 const sendTaskReminders = async () => {
