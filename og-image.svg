@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#fbf5f7"/>
+  <rect x="65" y="65" width="1070" height="500" rx="42" fill="#fffefa" stroke="#ead4dc" stroke-width="3"/>
+  <rect x="128" y="150" width="210" height="210" rx="48" fill="#9b2242"/>
+  <path d="M184 205h98M184 253h98M184 301h57" stroke="#fffefa" stroke-linecap="round" stroke-width="18"/>
+  <circle cx="281" cy="309" r="42" fill="#f0b000"/>
+  <path d="m263 309 13 13 25-29" fill="none" stroke="#fffefa" stroke-linecap="round" stroke-linejoin="round" stroke-width="12"/>
+  <text x="390" y="236" fill="#9b2242" font-family="Arial,sans-serif" font-size="56" font-weight="700">Gestor de reuniones</text>
+  <text x="394" y="310" fill="#4a3540" font-family="Arial,sans-serif" font-size="30">Reuniones · Actas · Tareas</text>
+  <rect x="394" y="360" width="112" height="8" rx="4" fill="#f0b000"/>
+</svg>
