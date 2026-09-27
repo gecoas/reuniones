@@ -44,6 +44,13 @@ const addMinuteTaskRow = (task = {}) => { const list = document.querySelector('#
 const loadMinuteMeetingDetails = async meetingId => { const meeting = adminData.meetings.find(item => item.id === meetingId); if (!meeting) return; const agenda = await api(`/api/meetings/${meetingId}/agenda`); const fields = document.querySelector('#recordFields'); const attendees = (formState?.record?.attendees || '').split(',').map(item => item.trim()); fields.querySelector('[name="content"]').value = agenda.map(item => item.title).join('\n'); fields.querySelector('#attendeeChips').innerHTML = adminData.users.filter(user => departmentMembership(user, meeting.department_id)).map(user => `<label class="attendee-chip"><input type="checkbox" name="attendee" value="${escapeHtml(user.name || user.email)}" ${attendees.includes(user.name || user.email) ? 'checked' : ''}><span>${escapeHtml(user.name || user.email)}</span></label>`).join('') || '<p class="form-help">No hay miembros asignados al departamento.</p>'; };
 const openRecordForm = (type, record = null) => {
   formState = { type, record };
+  const recordModal = document.querySelector('#recordModal');
+  recordModal.querySelector('.record-modal').classList.remove('expanded');
+  const expandButton = document.querySelector('#expandRecord');
+  expandButton.hidden = type !== 'minutes';
+  expandButton.textContent = '⛶';
+  expandButton.title = 'Ampliar formulario';
+  expandButton.setAttribute('aria-label', 'Ampliar formulario');
   const fields = document.querySelector('#recordFields');
   const titles = { departments: 'Área', users: 'Usuario', leaders: 'Directivos', meetings: 'Reunión', minutes: 'Acta', tasks: 'Tarea', members: 'Miembros del área', settings: 'Configuración del centro', emailSettings: 'Configuración de correo', objective: 'Objetivos del área' };
   document.querySelector('#recordTitle').textContent = `${record ? 'Editar' : 'Crear'} ${titles[type]}`;
@@ -229,6 +236,7 @@ const originalRecordForm = document.querySelector('#recordForm');
 const enhancedRecordForm = originalRecordForm.cloneNode(true);
 originalRecordForm.replaceWith(enhancedRecordForm);
 enhancedRecordForm.addEventListener('submit', event => saveRecordForm(event).catch(() => showToast('No se pudieron guardar los cambios')));
+enhancedRecordForm.querySelector('#expandRecord').addEventListener('click', event => { const expanded = document.querySelector('#recordModal .record-modal').classList.toggle('expanded'); event.currentTarget.textContent = expanded ? '↙' : '⛶'; event.currentTarget.title = expanded ? 'Restaurar tamaño' : 'Ampliar formulario'; event.currentTarget.setAttribute('aria-label', event.currentTarget.title); });
 ['#closeRecord', '#cancelRecord'].forEach(selector => enhancedRecordForm.querySelector(selector).addEventListener('click', () => document.querySelector('#recordModal').classList.remove('open')));
 enhancedRecordForm.addEventListener('click', async event => {
   if (event.target.closest('#addMinuteTask')) addMinuteTaskRow();
