@@ -113,7 +113,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url === '/api/settings' && request.method === 'PATCH') {
       const session = requireAdmin(request, response); if (!session) return;
-      const body = await readBody(request); const result = await pool.query('UPDATE school_settings SET name = COALESCE($1, name), logo_url = NULLIF($2, \'\'), email_from_name = COALESCE($3, email_from_name), email_from_address = COALESCE($4, email_from_address), updated_at = now() WHERE id = TRUE RETURNING name, logo_url, email_from_name, email_from_address', [body.name || null, body.logoUrl ?? null, body.emailFromName || null, body.emailFromAddress || null]);
+      const body = await readBody(request); if (body.logoUrl && (!/^data:image\/(png|jpeg|webp);base64,/.test(body.logoUrl) || Buffer.byteLength(body.logoUrl, 'utf8') > 700 * 1024)) return json(response, 400, { error: 'invalid_logo' }); const result = await pool.query('UPDATE school_settings SET name = COALESCE($1, name), logo_url = CASE WHEN $2 IS NULL THEN logo_url ELSE NULLIF($2, \'\') END, email_from_name = COALESCE($3, email_from_name), email_from_address = COALESCE($4, email_from_address), updated_at = now() WHERE id = TRUE RETURNING name, logo_url, email_from_name, email_from_address', [body.name || null, body.logoUrl ?? null, body.emailFromName || null, body.emailFromAddress || null]);
       return json(response, 200, result.rows[0]);
     }
     if (request.url === '/api/leadership' && request.method === 'GET') {

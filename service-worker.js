@@ -1,8 +1,8 @@
-const CACHE = 'reuniones-static-v1';
-const ASSETS = ['/', '/index.html', '/styles.css?v=admin-large-1', '/app.js?v=record-close-1', '/app-icon.svg', '/manifest.webmanifest'];
+const CACHE = 'reuniones-static-v3';
+const ASSETS = ['/', '/index.html', '/styles.css?v=readable-desktop-1', '/app.js?v=readable-desktop-1', '/app-icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
-self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request)));
