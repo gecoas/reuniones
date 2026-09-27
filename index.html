@@ -2,8 +2,11 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gestor de reuniones</title>
+   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+   <title>Gestor de reuniones</title>
+   <meta name="theme-color" content="#1e6b61" />
+   <link rel="manifest" href="manifest.webmanifest" />
+   <link rel="apple-touch-icon" href="app-icon.svg" />
   <link rel="stylesheet" href="styles.css?v=admin-large-1" />
 </head>
 <body>
@@ -35,7 +38,7 @@
     </aside>
 
     <main class="main-content">
-      <header class="topbar"><button class="mobile-menu" id="mobileMenu">☰</button></header>
+      <header class="topbar"><button class="mobile-menu" id="mobileMenu">☰</button><button class="install-app" id="installApp" hidden aria-label="Instalar aplicación" title="Instalar aplicación">⇩</button></header>
       <div class="content-wrap">
         <section class="welcome-row"><div><p class="eyebrow" id="todayDate">HOY</p><h1 id="welcomeName">Buenos días, Gabriel <span>✦</span></h1><p class="subheading">Esto es lo que está pasando en tus áreas.</p></div><div class="welcome-actions"><button class="button primary" id="newMeeting"><span>＋</span> Nueva reunión</button></div></section>
         <section id="objectivesPage" hidden><div class="section-heading"><div><h2>Objetivos del curso</h2><p id="objectivesYear"></p></div></div><div class="objectives-grid" id="objectivesGrid"></div></section>

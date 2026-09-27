@@ -3,6 +3,17 @@ const toast = document.querySelector('#toast');
 const showToast = (message) => { toast.textContent = String(message).replace('OpenAI', 'Groq'); toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2400); };
 const api = (url, options) => fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options }).then(async response => { if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || `API ${response.status}`); } return response.status === 204 ? null : response.json(); });
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+let deferredInstallPrompt = null;
+const installAppButton = document.querySelector('#installApp');
+const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch(() => {}));
+window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); deferredInstallPrompt = event; installAppButton.hidden = false; });
+window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; installAppButton.hidden = true; });
+if (isIos && !window.navigator.standalone) installAppButton.hidden = false;
+installAppButton.addEventListener('click', async () => {
+  if (deferredInstallPrompt) { deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice; deferredInstallPrompt = null; installAppButton.hidden = true; return; }
+  if (isIos) showToast('En Safari, pulsa Compartir y elige «Añadir a pantalla de inicio»');
+});
 let adminSection = 'departments';
 let adminData = { departments: [], users: [], leaders: [], meetings: [], minutes: [], tasks: [] };
 let currentSession = null;

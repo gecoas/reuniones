@@ -287,7 +287,7 @@ const server = http.createServer(async (request, response) => {
     const file = requested === '/' ? 'index.html' : requested.slice(1);
     const filePath = path.resolve(root, file);
     if (!filePath.startsWith(root) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return send(response, 404, 'Not found');
-    const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+    const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
     send(response, 200, fs.readFileSync(filePath), { 'Content-Type': types[path.extname(filePath)] || 'application/octet-stream' });
   } catch (error) { console.error(error); send(response, 500, 'Error interno'); }
 });

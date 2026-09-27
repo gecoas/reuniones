@@ -1,0 +1,13 @@
+{
+  "name": "Gestor de reuniones",
+  "short_name": "Reuniones",
+  "description": "Reuniones, actas y tareas de tu área.",
+  "lang": "es",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f4",
+  "theme_color": "#1e6b61",
+  "icons": [
+    { "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
