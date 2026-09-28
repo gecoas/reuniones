@@ -17,6 +17,7 @@ const adminEmail = (process.env.ADMIN_EMAIL || 'gbailly@alcaste-lasfuentes.com')
 const redirectUri = `${appUrl}/auth/google/callback`;
 const sessionSecret = process.env.SESSION_SECRET || clientSecret || 'reuniones-session-change-me';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL || 'postgres://reuniones:reuniones@localhost:5432/reuniones' });
+const departmentColors = new Set(['coral', 'blue', 'gold', 'purple', 'teal', 'indigo', 'green', 'orange', 'rose', 'burgundy']);
 const schema = fs.readFileSync(path.join(root, 'schema.sql'), 'utf8');
 const cookie = (token, maxAge) => `session=${token}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
 const parseCookies = request => Object.fromEntries((request.headers.cookie || '').split(';').filter(Boolean).map(value => { const [key, ...rest] = value.trim().split('='); return [key, rest.join('=')]; }));
@@ -168,7 +169,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url === '/api/departments' && request.method === 'POST') {
       const session = requireAdmin(request, response); if (!session) return;
-      const body = await readBody(request); const result = await pool.query('INSERT INTO departments (name, color, head_user_id) VALUES ($1, $2, NULLIF($3, \'\')::uuid) RETURNING *', [body.name, body.color || 'coral', body.headUserId || '']);
+      const body = await readBody(request); const result = await pool.query('INSERT INTO departments (name, color, head_user_id) VALUES ($1, $2, NULLIF($3, \'\')::uuid) RETURNING *', [body.name, departmentColors.has(body.color) ? body.color : 'coral', body.headUserId || '']);
       return json(response, 201, result.rows[0]);
     }
     if (request.url === '/api/users' && request.method === 'GET') {
@@ -207,7 +208,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.url?.startsWith('/api/departments/') && request.method === 'PATCH') {
       const session = requireSession(request, response); if (!session) return;
-      const id = request.url.split('/')[3]; if (!await canManageDepartment(session, id)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); const result = await pool.query('UPDATE departments SET name = COALESCE($1, name), color = COALESCE($2, color), head_user_id = COALESCE(NULLIF($3, \'\')::uuid, head_user_id), updated_at = now() WHERE id = $4 RETURNING *', [body.name || null, body.color || null, body.headUserId ?? '', id]);
+      const id = request.url.split('/')[3]; if (!await canManageDepartment(session, id)) return json(response, 403, { error: 'department_manager_required' }); const body = await readBody(request); const color = departmentColors.has(body.color) ? body.color : null; const result = await pool.query('UPDATE departments SET name = COALESCE($1, name), color = COALESCE($2, color), head_user_id = COALESCE(NULLIF($3, \'\')::uuid, head_user_id), updated_at = now() WHERE id = $4 RETURNING *', [body.name || null, color, body.headUserId ?? '', id]);
       return json(response, 200, result.rows[0] || { error: 'not_found' });
     }
     if (request.url?.startsWith('/api/departments/') && request.method === 'DELETE') {
